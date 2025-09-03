@@ -21,10 +21,11 @@ export function GameShell({
   gameDef: GameDefinition | null;
   managers: Managers;
 }) {
-  const [state, setState] = useState({ score: 0, paused: false });
+  const [state, setState] = useState({ score: 0, paused: true });
   const gameRef = useRef<ReturnType<GameDefinition['createInstance']> | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const startedRef = useRef(false);
 
   useEffect(() => {
     if (!gameDef) return;
@@ -37,6 +38,17 @@ export function GameShell({
       gameRef.current = null;
     };
   }, [gameDef, managers.a11y]);
+
+  // Keep fullscreen state in sync even when user presses ESC or uses OS UI
+  useEffect(() => {
+    const onFsChange = () => {
+      const el = stageRef.current;
+      const fs = document.fullscreenElement === el;
+      setIsFullscreen(!!fs);
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
 
   if (!gameDef) {
     return (
@@ -54,14 +66,25 @@ export function GameShell({
           <button
             className="btn"
             onClick={() => {
-              gameRef.current?.start();
-              managers.a11y.announce('Game started');
-              window.dispatchEvent(
-                new CustomEvent('game:state', { detail: { action: 'start', id: gameDef.id } })
-              );
+              if (!startedRef.current) {
+                gameRef.current?.start();
+                startedRef.current = true;
+                managers.a11y.announce('Game started');
+                window.dispatchEvent(
+                  new CustomEvent('game:state', { detail: { action: 'start', id: gameDef.id } })
+                );
+              } else {
+                gameRef.current?.resume();
+                managers.a11y.announce('Game resumed');
+                window.dispatchEvent(
+                  new CustomEvent('game:state', { detail: { action: 'resume', id: gameDef.id } })
+                );
+              }
+              setState((s) => ({ ...s, paused: false }));
             }}
+            disabled={!state.paused}
           >
-            Start
+            Play
           </button>
           <button
             className="btn"
@@ -73,28 +96,17 @@ export function GameShell({
                 new CustomEvent('game:state', { detail: { action: 'pause', id: gameDef.id } })
               );
             }}
+            disabled={state.paused}
           >
             Pause
           </button>
           <button
             className="btn"
             onClick={() => {
-              gameRef.current?.resume();
-              managers.a11y.announce('Game resumed');
-              setState((s) => ({ ...s, paused: false }));
-              window.dispatchEvent(
-                new CustomEvent('game:state', { detail: { action: 'resume', id: gameDef.id } })
-              );
-            }}
-          >
-            Resume
-          </button>
-          <button
-            className="btn"
-            onClick={() => {
               gameRef.current?.reset();
               managers.a11y.announce('Game reset');
-              setState({ score: 0, paused: false });
+              setState({ score: 0, paused: true });
+              startedRef.current = false;
               window.dispatchEvent(
                 new CustomEvent('game:state', { detail: { action: 'reset', id: gameDef.id } })
               );

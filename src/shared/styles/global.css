@@ -74,7 +74,8 @@ body {
   background: #f6f6f6;
   border: 2px solid var(--color-border);
   min-height: 300px;
-  display: grid; place-items: center;
+  /* Let content stretch to edges instead of being centered */
+  display: block;
   /* Avoid Windows High Contrast from forcing black background here */
   forced-color-adjust: none;
 }
@@ -108,8 +109,35 @@ body {
   border: 2px solid #000; border-radius: 8px;
   padding: .75rem;
   cursor: default;
+  z-index: 10; /* ensure above target/cursor */
 }
 .tc-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: .5rem; }
 .tc-row input[type="range"], .tc-row select, .tc-row input[type="checkbox"] {
   min-height: 44px; min-width: 44px;
+}
+
+/* Fullscreen improvements */
+.game-stage:fullscreen,
+.tc-stage:fullscreen {
+  width: 100vw !important;
+  height: 100vh !important;
+  border-radius: 0 !important;
+}
+.game-stage:fullscreen {
+  border: 0 !important;
+  background: #000 !important;
+}
+.game-stage:fullscreen .tc-stage,
+.tc-stage:fullscreen {
+  width: 100% !important;
+  height: 100% !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+.tc-stage:fullscreen .tc-hud {
+  font-size: 28px;
+}
+.tc-stage:fullscreen .tc-config {
+  transform: scale(1.1);
+  transform-origin: top left;
 }

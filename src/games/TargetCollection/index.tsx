@@ -23,9 +23,9 @@ const PALETTE = [
   { name: 'Black on Light Gray', cursor: '#000000', bg: '#dddddd', target: '#000000' }
 ] as const;
 
-// Config schema
+// Config schema (v3 removes the former 'attraction' option)
 const schema: GameConfigSchema = {
-  version: 2,
+  version: 3,
   properties: {
     cursorSize: { type: 'number', min: 20, max: 100 },
     cursorShape: { type: 'string' }, // circle | square | cross
@@ -33,7 +33,6 @@ const schema: GameConfigSchema = {
     targetSize: { type: 'number', min: 50, max: 200 },
     soundOn: { type: 'boolean' },
     volume: { type: 'number', min: 0, max: 1 },
-    attraction: { type: 'string' }, // off | subtle | strong
     collectionMode: { type: 'string' }, // instant | dwell | press
     dwellMs: { type: 'number', min: 100, max: 1500 }
   }
@@ -46,7 +45,6 @@ export type TCConfig = {
   targetSize: number;
   soundOn: boolean;
   volume: number; // 0-1
-  attraction: 'off' | 'subtle' | 'strong';
   collectionMode: 'instant' | 'dwell' | 'press';
   dwellMs: number;
 };
@@ -58,7 +56,6 @@ const defaultConfig: TCConfig = {
   targetSize: 120,
   soundOn: true,
   volume: 0.6,
-  attraction: 'off',
   collectionMode: 'instant',
   dwellMs: 600,
 };
@@ -82,11 +79,6 @@ function sanitizeConfig(raw: Partial<TCConfig> | undefined): TCConfig {
   )
     ? ((r as any).cursorShape as TCConfig['cursorShape'])
     : defaultConfig.cursorShape;
-  const attraction: TCConfig['attraction'] = ['off', 'subtle', 'strong'].includes(
-    (r as any).attraction
-  )
-    ? ((r as any).attraction as TCConfig['attraction'])
-    : defaultConfig.attraction;
   const collectionMode: TCConfig['collectionMode'] = ['instant', 'dwell', 'press'].includes(
     (r as any).collectionMode
   )
@@ -101,7 +93,6 @@ function sanitizeConfig(raw: Partial<TCConfig> | undefined): TCConfig {
     targetSize,
     soundOn,
     volume,
-    attraction,
     collectionMode,
     dwellMs
   };
@@ -192,11 +183,11 @@ function TargetCollectionComponent({ managers }: { managers: { a11y: Accessibili
   const configKey = 'game:target-collection';
   const [cfg, setCfg] = useState<TCConfig>(() =>
     sanitizeConfig(
-      managers.config.load<TCConfig>(configKey, { version: 2, defaults: defaultConfig })
+      managers.config.load<TCConfig>(configKey, { version: 3, defaults: defaultConfig })
     )
   );
   useEffect(() => {
-    managers.config.save<TCConfig>(configKey, { version: 2, defaults: defaultConfig }, cfg);
+    managers.config.save<TCConfig>(configKey, { version: 3, defaults: defaultConfig }, cfg);
   }, [cfg, managers.config]);
 
   // State
@@ -211,7 +202,6 @@ function TargetCollectionComponent({ managers }: { managers: { a11y: Accessibili
   const cfgRef = useRef({
     collectionMode: cfg.collectionMode,
     dwellMs: cfg.dwellMs,
-    attraction: cfg.attraction,
     cursorSize: cfg.cursorSize,
     targetSize: cfg.targetSize
   });
@@ -219,11 +209,10 @@ function TargetCollectionComponent({ managers }: { managers: { a11y: Accessibili
     cfgRef.current = {
       collectionMode: cfg.collectionMode,
       dwellMs: cfg.dwellMs,
-      attraction: cfg.attraction,
       cursorSize: cfg.cursorSize,
       targetSize: cfg.targetSize
     };
-  }, [cfg.collectionMode, cfg.dwellMs, cfg.attraction, cfg.cursorSize, cfg.targetSize]);
+  }, [cfg.collectionMode, cfg.dwellMs, cfg.cursorSize, cfg.targetSize]);
 
   const palette = PALETTE[cfg.paletteIndex] ?? PALETTE[0];
 
@@ -385,18 +374,7 @@ function TargetCollectionComponent({ managers }: { managers: { a11y: Accessibili
   posRef.current.x = Math.max(halfCursor, Math.min(stage.width - halfCursor, posRef.current.x));
   posRef.current.y = Math.max(halfCursor, Math.min(stage.height - halfCursor, posRef.current.y));
 
-    // attraction if near (only during active play)
-    if (!pausedRef.current && cfgRef.current.attraction !== 'off') {
-      const t = targetPosRef.current;
-      const dx = t.x - posRef.current.x;
-      const dy = t.y - posRef.current.y;
-      const d = Math.hypot(dx, dy);
-      const strength = cfgRef.current.attraction === 'strong' ? 0.12 : 0.06;
-      if (d < 160) {
-        posRef.current.x += dx * strength;
-        posRef.current.y += dy * strength;
-      }
-    }
+  // attraction removed in v3
 
   cursor.style.transform = `translate(${posRef.current.x - halfCursor}px, ${posRef.current.y - halfCursor}px)`;
   if (!pausedRef.current) {
@@ -491,7 +469,14 @@ function TargetCollectionComponent({ managers }: { managers: { a11y: Accessibili
       const detail = (e as CustomEvent).detail as { action: string; id: string };
       if (detail?.id !== 'target-collection') return;
       if (detail.action === 'start' || detail.action === 'resume') setPaused(false);
-      if (detail.action === 'pause' || detail.action === 'reset') setPaused(true);
+      if (detail.action === 'pause') setPaused(true);
+      if (detail.action === 'reset') {
+        setPaused(true);
+        setScore(0);
+        const st = stageRef.current?.getBoundingClientRect();
+        if (st) posRef.current = { x: st.width / 2, y: st.height / 2 };
+        placeTarget();
+      }
     };
     window.addEventListener('game:state', onState as EventListener);
     return () => window.removeEventListener('game:state', onState as EventListener);
@@ -541,8 +526,8 @@ function TargetCollectionComponent({ managers }: { managers: { a11y: Accessibili
       ref={stageRef}
       className="tc-stage"
       style={{
-        width: 'min(100%, 1000px)',
-        height: 'min(70vh, 700px)',
+  width: '100%',
+  height: 'clamp(420px, 75vh, 90vh)',
         border: '4px solid var(--color-border)',
         borderRadius: '12px',
         position: 'relative',
@@ -600,6 +585,7 @@ function TargetCollectionComponent({ managers }: { managers: { a11y: Accessibili
 
       {/* HUD */}
       <div
+        className="tc-hud"
         style={{
           position: 'absolute',
           top: 12,
@@ -687,17 +673,7 @@ function TargetCollectionComponent({ managers }: { managers: { a11y: Accessibili
             disabled={!cfg.soundOn}
           />
         </label>
-        <label className="tc-row">
-          Attraction
-          <select
-            value={cfg.attraction}
-            onChange={(e) => setCfg({ ...cfg, attraction: e.currentTarget.value as TCConfig['attraction'] })}
-          >
-            <option value="off">Off</option>
-            <option value="subtle">Subtle</option>
-            <option value="strong">Strong</option>
-          </select>
-        </label>
+  {/* Attraction control removed in v3 */}
         <label className="tc-row">
           Collect by
           <select
