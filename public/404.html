@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>404</title>
+    <meta http-equiv="refresh" content="0; url=./" />
+  </head>
+  <body>
+    <p>Redirecting…</p>
+    <script>
+      // SPA fallback for GitHub Pages
+      (function() {
+        var l = window.location;
+        if (l.pathname && !l.pathname.endsWith('/')) {
+          l.replace(l.protocol + '//' + l.host + l.pathname.replace(/[^/]+$/, '') + '/');
+        }
+      })();
+    </script>
+  </body>
+</html>
