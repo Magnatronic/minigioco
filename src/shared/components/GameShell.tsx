@@ -61,7 +61,6 @@ export function GameShell({
   return (
     <section className="game-area" aria-label={`${gameDef.name} game`} tabIndex={0}>
   <header className="game-area__header" role="group">
-        <h2>{gameDef.name}</h2>
         <div className="game-controls">
           <button
             className="btn"
@@ -149,9 +148,7 @@ export function GameShell({
         )}
       </div>
 
-      <div className="game-area__footer" role="status" aria-live="polite">
-        <span>Score: {state.score}</span>
-      </div>
+  {/* Score footer removed per design request */}
     </section>
   );
 }

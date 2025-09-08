@@ -48,7 +48,6 @@ export default function App() {
   return (
     <div className="app">
       <header className="app__header" role="banner">
-        <h1 className="app__title">Accessible Game Platform</h1>
         <A11yToolbar theme={theme} a11y={a11y} />
       </header>
 
@@ -73,13 +72,7 @@ export default function App() {
         </main>
       </div>
 
-      <footer
-        className="app__footer"
-        role="contentinfo"
-        aria-hidden={!consented && !isTest ? true : undefined}
-      >
-        <small>WCAG 2.1 AA targets. Use toolbar for high contrast and reduced motion.</small>
-      </footer>
+  {/* Footer removed per design request */}
 
   {!consented && (
         <ConsentBanner

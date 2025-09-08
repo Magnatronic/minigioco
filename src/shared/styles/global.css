@@ -1,4 +1,4 @@
-html { font-size: var(--font-base); }
+html { font-size: 18px; }
 body {
   margin: 0;
   font-family: system-ui, Arial, sans-serif;
@@ -27,7 +27,8 @@ body {
   display: grid; gap: var(--space-2);
   grid-template-areas: "sidebar main";
   grid-template-columns: 320px 1fr;
-  padding: var(--space-2);
+  /* Reduce top padding so gameplay sits at the top under the toolbar */
+  padding: 0 var(--space-2) var(--space-2);
 }
 .app__sidebar { grid-area: sidebar; }
 .app__main { grid-area: main; min-height: 60vh; }
@@ -66,10 +67,13 @@ body {
 
 .game-area {
   display: grid; gap: var(--space-2);
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto 1fr; /* no footer row */
   border: 2px solid var(--color-border);
-  padding: var(--space-2);
+  /* Remove internal top padding so buttons and canvas hug the top */
+  padding: 0 var(--space-2) var(--space-2);
 }
+.game-area__header { margin: 0; padding-top: 0; }
+.game-controls { margin: 0; }
 .game-stage {
   background: #f6f6f6;
   border: 2px solid var(--color-border);
@@ -81,7 +85,6 @@ body {
 }
 
 .toolbar { display: flex; gap: var(--space-1); align-items: center; }
-.font-label { display: inline-flex; gap: .5rem; align-items: center; }
 
 .consent {
   position: fixed; left: 1rem; right: 1rem; bottom: 1rem;
