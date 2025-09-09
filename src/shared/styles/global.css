@@ -9,7 +9,7 @@ body {
 /* Prevent UA dark-mode auto-adjust; we manage contrast ourselves */
 :root { color-scheme: light; }
 /* Optional explicit light theme body to avoid external dark extensions */
-.app { background: var(--color-bg); color: var(--color-fg); }
+.app { background: var(--color-bg); color: var(--color-fg); min-height: 100vh; }
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
@@ -29,6 +29,8 @@ body {
   grid-template-columns: 320px 1fr;
   /* Page padding */
   padding: var(--space-2);
+  /* Ensure the content grid fills viewport height (minus padding) */
+  min-height: calc(100vh - (2 * var(--space-2)));
 }
 .app__sidebar {
   grid-area: sidebar;
@@ -37,7 +39,14 @@ body {
   gap: var(--space-2);
 }
 .sidebar__section { display: grid; gap: var(--space-1); }
-.app__main { grid-area: main; min-height: 60vh; }
+.app__main {
+  grid-area: main;
+  /* Fill available height from layout grid */
+  height: 100%;
+  min-height: 0; /* allow children to size with overflow in flex/grid */
+  display: flex;
+  flex-direction: column;
+}
 
 @media (max-width: 767px) {
   .app__layout {
@@ -77,6 +86,9 @@ body {
   border: 2px solid var(--color-border);
   /* Allow top whitespace consistent with page padding */
   padding: var(--space-2);
+  /* Stretch to fill parent (so stage can take remaining height) */
+  height: 100%;
+  min-height: 0;
 }
 .game-area__header { margin: 0; }
 .game-controls { margin: 0; }
@@ -84,6 +96,8 @@ body {
   background: #f6f6f6;
   border: 2px solid var(--color-border);
   min-height: 300px;
+  /* Take all available height left by header row */
+  height: 100%;
   /* Let content stretch to edges instead of being centered */
   display: block;
   /* Avoid Windows High Contrast from forcing black background here */
