@@ -527,7 +527,7 @@ function TargetCollectionComponent({ managers }: { managers: { a11y: Accessibili
       className="tc-stage"
       style={{
   width: '100%',
-  height: 'clamp(420px, 75vh, 90vh)',
+  height: '100%',
         border: '4px solid var(--color-border)',
         borderRadius: '12px',
         position: 'relative',
