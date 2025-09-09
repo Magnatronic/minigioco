@@ -7,7 +7,6 @@ import App from '../App';
 describe('App accessibility', () => {
   test('renders with basic landmarks', async () => {
     const { container } = render(<App />);
-  expect(screen.getByRole('banner')).toBeInTheDocument();
   expect(screen.getByRole('main')).toBeInTheDocument();
   const results = await axe(container);
   if (results.violations.length) {

@@ -60,7 +60,7 @@ export function GameShell({
 
   return (
     <section className="game-area" aria-label={`${gameDef.name} game`} tabIndex={0}>
-  <header className="game-area__header" role="group">
+      <header className="game-area__header" role="group">
         <div className="game-controls">
           <button
             className="btn"

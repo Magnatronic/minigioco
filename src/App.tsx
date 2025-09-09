@@ -47,20 +47,21 @@ export default function App() {
   const isTest = (globalThis as any).VITEST_SETUP_ENV === 'jsdom';
   return (
     <div className="app">
-      <header className="app__header" role="banner">
-        <A11yToolbar theme={theme} a11y={a11y} />
-      </header>
-
       <div
         className="app__layout"
         aria-hidden={!consented && !isTest ? true : undefined}
       >
-  <aside className="app__sidebar" aria-label="Games">
+        <aside className="app__sidebar" aria-label="Sidebar">
+          <div className="sidebar__section">
+            <A11yToolbar theme={theme} a11y={a11y} />
+          </div>
+          <div className="sidebar__section" aria-label="Games">
           <GameList
             games={registry.list()}
             selectedId={selectedId}
             onSelect={(id: string) => setSelectedId(id)}
           />
+          </div>
         </aside>
 
         <main id="main" className="app__main" role="main">
@@ -83,7 +84,7 @@ export default function App() {
         />
       )}
 
-      <ScreenReaderLive manager={a11y} />
+  <ScreenReaderLive manager={a11y} />
     </div>
   );
 }
