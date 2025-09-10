@@ -24,8 +24,8 @@ const PALETTE = [
 const schema: GameConfigSchema = {
   version: 2,
   properties: {
-    speedMult: { type: 'number', min: 1, max: 10 },
-    turnDegPerSec: { type: 'number', min: 30, max: 240 },
+    speedMult: { type: 'number', min: 1, max: 6 },
+    turnDegPerSec: { type: 'number', min: 20, max: 140 },
     friction: { type: 'number', min: 0, max: 0.2 },
     wrapEdges: { type: 'boolean' },
     showGrid: { type: 'boolean' },
@@ -47,9 +47,9 @@ type DSConfig = {
 };
 
 const defaultCfg: DSConfig = {
-  speedMult: 5,
-  turnDegPerSec: 140,
-  friction: 0.06,
+  speedMult: 3,
+  turnDegPerSec: 90,
+  friction: 0.12,
   wrapEdges: false,
   showGrid: true,
   vehicleShape: 'car',
@@ -64,8 +64,8 @@ function clamp(n: number, min: number, max: number) {
 function sanitize(raw?: Partial<DSConfig>): DSConfig {
   const r = raw ?? {};
   return {
-    speedMult: clamp(Number((r as any).speedMult ?? defaultCfg.speedMult), 1, 10),
-    turnDegPerSec: clamp(Number((r as any).turnDegPerSec ?? defaultCfg.turnDegPerSec), 30, 240),
+  speedMult: clamp(Number((r as any).speedMult ?? defaultCfg.speedMult), 1, 6),
+  turnDegPerSec: clamp(Number((r as any).turnDegPerSec ?? defaultCfg.turnDegPerSec), 20, 140),
     friction: clamp(Number((r as any).friction ?? defaultCfg.friction), 0, 0.2),
     wrapEdges: (r as any).wrapEdges !== undefined ? Boolean((r as any).wrapEdges) : defaultCfg.wrapEdges,
     showGrid: (r as any).showGrid !== undefined ? Boolean((r as any).showGrid) : defaultCfg.showGrid,
@@ -176,7 +176,7 @@ function DrivingComponent({ managers }: { managers: { a11y: AccessibilityManager
     const steer = smooth.current.steer;
     const throttle = smooth.current.throttle;
 
-  const baseMax = 220; // px/s base max speed
+  const baseMax = 160; // px/s base max speed (lowered)
     const maxFwd = baseMax * cfgRef.current.speedMult; // 220..2200
     const maxRev = maxFwd * 0.4; // reverse slower
   const accel = 900; // px/s^2
@@ -309,14 +309,14 @@ function DrivingComponent({ managers }: { managers: { a11y: AccessibilityManager
         {!paused ? null : (
           <div className="tc-config" role="region" aria-label="Settings">
             <SettingsGroup title="Movement">
-              <SettingsRow label="Movement speed">
+        <SettingsRow label="Movement speed">
                 <input
                   type="range"
-                  min={1}
-                  max={10}
+          min={1}
+          max={6}
                   step={1}
                   value={cfg.speedMult}
-                  style={{ ['--_filled' as any]: `${((cfg.speedMult - 1) / 9) * 100}%` }}
+          style={{ ['--_filled' as any]: `${((cfg.speedMult - 1) / 5) * 100}%` }}
                   title={`x${cfg.speedMult}`}
                   onChange={(e) => setCfg({ ...cfg, speedMult: Number(e.currentTarget.value) })}
                 />
@@ -324,11 +324,11 @@ function DrivingComponent({ managers }: { managers: { a11y: AccessibilityManager
               <SettingsRow label="Turn rate">
                 <input
                   type="range"
-                  min={30}
-                  max={240}
-                  step={5}
+          min={20}
+          max={140}
+          step={2}
                   value={cfg.turnDegPerSec}
-                  style={{ ['--_filled' as any]: `${((cfg.turnDegPerSec - 30) / (240 - 30)) * 100}%` }}
+          style={{ ['--_filled' as any]: `${((cfg.turnDegPerSec - 20) / (140 - 20)) * 100}%` }}
                   title={`${cfg.turnDegPerSec}°/s`}
                   onChange={(e) => setCfg({ ...cfg, turnDegPerSec: Number(e.currentTarget.value) })}
                 />
