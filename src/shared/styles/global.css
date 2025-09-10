@@ -206,17 +206,19 @@ body {
 
 /* Fullscreen improvements */
 .game-stage:fullscreen,
-.tc-stage:fullscreen {
+.tc-stage:fullscreen,
+.game-area:fullscreen {
   width: 100vw !important;
   height: 100vh !important;
   border-radius: 0 !important;
 }
-.game-stage:fullscreen {
+.game-stage:fullscreen, .game-area:fullscreen .game-stage {
   border: 0 !important;
   background: #000 !important;
 }
 .game-stage:fullscreen .tc-stage,
-.tc-stage:fullscreen {
+.tc-stage:fullscreen,
+.game-area:fullscreen .tc-stage {
   width: 100% !important;
   height: 100% !important;
   border: 0 !important;
