@@ -126,7 +126,7 @@ body {
 }
 .tc-config {
   position: absolute; left: 12px; bottom: 12px;
-  display: grid; gap: .5rem;
+  display: grid; gap: .75rem;
   background: var(--color-panel-bg);
   color: var(--color-panel-fg);
   border: 2px solid var(--color-panel-border); border-radius: 8px;
@@ -134,9 +134,74 @@ body {
   cursor: default;
   z-index: 10; /* ensure above target/cursor */
 }
-.tc-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: .5rem; }
-.tc-row input[type="range"], .tc-row select, .tc-row input[type="checkbox"] {
-  min-height: 44px; min-width: 44px;
+.tc-row { display: grid; grid-template-columns: 150px 1fr; align-items: center; gap: 1.1rem; }
+.tc-config fieldset { padding: 1rem; }
+.tc-config legend { padding: 0 .5rem; font-weight: 700; }
+.tc-value { display: none; }
+/* Vertical spacing between controls inside groups */
+.tc-group { display: grid; gap: 1rem; }
+.tc-group:first-of-type { gap: 1.25rem; }
+.tc-config { font-size: .95rem; }
+.tc-row select, .tc-row input[type="checkbox"] {
+  min-height: 32px; min-width: 32px;
+}
+.tc-config input, .tc-config select {
+  background: var(--color-input-bg);
+  color: var(--color-input-fg);
+  border: 2px solid var(--color-input-border);
+  border-radius: 6px;
+  font-size: .95rem;
+}
+.tc-config label {
+  color: var(--color-panel-fg);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  font-weight: 600;
+}
+.tc-config input, .tc-config select {
+  padding: .3rem .5rem;
+  width: 100%;
+}
+.tc-config input:focus, .tc-config select:focus {
+  outline: 3px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+/* Range slider styling */
+.tc-config input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 12px; /* slimmer capsule height */
+  padding: 5px 0; /* leaves ~2px content height for the track */
+  background-clip: content-box;
+  background: linear-gradient(
+    to right,
+    var(--color-input-track-filled) var(--_filled, 0%),
+    var(--color-input-track) var(--_filled, 0%)
+  );
+  border: 1px solid var(--color-input-border);
+  border-radius: 999px;
+}
+.tc-config input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--color-input-thumb);
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 0; opacity: .75;
+}
+.tc-config input[type="range"]::-moz-range-thumb {
+  background: var(--color-input-thumb);
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 0; opacity: .75;
+}
+.tc-config input[type="range"]:hover::-webkit-slider-thumb,
+.tc-config input[type="range"]:focus::-webkit-slider-thumb,
+.tc-config input[type="range"]:hover::-moz-range-thumb,
+.tc-config input[type="range"]:focus::-moz-range-thumb { opacity: 1; }
+.tc-config input[type="range"]:focus::-webkit-slider-thumb,
+.tc-config input[type="range"]:focus::-moz-range-thumb {
+  box-shadow: 0 0 0 3px var(--color-focus-ring);
 }
 
 /* Fullscreen improvements */

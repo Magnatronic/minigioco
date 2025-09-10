@@ -32,7 +32,6 @@ const schema: GameConfigSchema = {
     paletteIndex: { type: 'number', min: 0, max: PALETTE.length - 1 },
     targetSize: { type: 'number', min: 50, max: 200 },
     soundOn: { type: 'boolean' },
-    volume: { type: 'number', min: 0, max: 1 },
     collectionMode: { type: 'string' }, // instant | dwell | press
     dwellMs: { type: 'number', min: 100, max: 1500 }
   }
@@ -44,7 +43,6 @@ export type TCConfig = {
   paletteIndex: number;
   targetSize: number;
   soundOn: boolean;
-  volume: number; // 0-1
   collectionMode: 'instant' | 'dwell' | 'press';
   dwellMs: number;
 };
@@ -55,9 +53,8 @@ const defaultConfig: TCConfig = {
   paletteIndex: 1,
   targetSize: 120,
   soundOn: true,
-  volume: 0.6,
   collectionMode: 'instant',
-  dwellMs: 600,
+  dwellMs: 600
 };
 
 function clamp(n: number, min: number, max: number) {
@@ -73,7 +70,6 @@ function sanitizeConfig(raw: Partial<TCConfig> | undefined): TCConfig {
   );
   const cursorSize = clamp(Number((r as any).cursorSize ?? defaultConfig.cursorSize), 20, 100);
   const targetSize = clamp(Number((r as any).targetSize ?? defaultConfig.targetSize), 50, 200);
-  const volume = clamp(Number((r as any).volume ?? defaultConfig.volume), 0, 1);
   const cursorShape: TCConfig['cursorShape'] = ['circle', 'square', 'cross'].includes(
     (r as any).cursorShape
   )
@@ -92,7 +88,6 @@ function sanitizeConfig(raw: Partial<TCConfig> | undefined): TCConfig {
     paletteIndex,
     targetSize,
     soundOn,
-    volume,
     collectionMode,
     dwellMs
   };
@@ -159,109 +154,104 @@ function ensureAudioCtx() {
   window.addEventListener('keydown', unlock, { once: true });
   return audioCtx;
 }
-function playSuccess(volume: number) {
+
+const DEFAULT_VOLUME = 0.6;
+function playSuccess(volume: number = DEFAULT_VOLUME) {
   const ctx = ensureAudioCtx();
   if (!ctx) return;
   const o = ctx.createOscillator();
   const g = ctx.createGain();
   o.type = 'sine';
-  o.frequency.setValueAtTime(880, ctx.currentTime);
-  g.gain.value = volume;
+  o.frequency.value = 880; // A5
+  g.gain.value = Math.max(0, Math.min(1, volume));
   o.connect(g);
   g.connect(ctx.destination);
-  o.start();
-  o.stop(ctx.currentTime + 0.15);
+  const t = ctx.currentTime;
+  o.start(t);
+  // quick 150ms blip down to 660Hz
+  o.frequency.setValueAtTime(880, t);
+  o.frequency.exponentialRampToValueAtTime(660, t + 0.15);
+  g.gain.setValueAtTime(g.gain.value, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+  o.stop(t + 0.17);
 }
 
-// UI component
-function TargetCollectionComponent({ managers }: { managers: { a11y: AccessibilityManager; input: InputManager; config: ConfigManager } }) {
-  const stageRef = useRef<HTMLDivElement>(null);
-  const cursorRef = useRef<HTMLDivElement>(null);
-  const targetRef = useRef<HTMLDivElement>(null);
+// Luminance helpers
+const hexToRgb = (hex: string) => {
+  const m = hex.replace('#', '');
+  const bigint = parseInt(m, 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+  return { r, g, b };
+};
+const luminance = (hex: string) => {
+  const { r, g, b } = hexToRgb(hex);
+  const lin = (v: number) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  const rL = lin(r),
+    gL = lin(g),
+    bL = lin(b);
+  return 0.2126 * rL + 0.7152 * gL + 0.0722 * bL;
+};
 
-  // Persistent config
-  const configKey = 'game:target-collection';
-  const [cfg, setCfg] = useState<TCConfig>(() =>
-    sanitizeConfig(
-      managers.config.load<TCConfig>(configKey, { version: 3, defaults: defaultConfig })
-    )
-  );
+// React component
+function TargetCollectionComponent({
+  managers,
+  gameRef
+}: {
+  managers: {
+    a11y: AccessibilityManager;
+    input: InputManager;
+    config: ConfigManager;
+  };
+  gameRef: React.MutableRefObject<ReturnType<GameDefinition['createInstance']> | null>;
+}) {
+  const [cfg, setCfg] = useState<TCConfig>(() => sanitizeConfig({}));
+  const cfgRef = useRef(cfg);
   useEffect(() => {
-    managers.config.save<TCConfig>(configKey, { version: 3, defaults: defaultConfig }, cfg);
-  }, [cfg, managers.config]);
+    cfgRef.current = cfg;
+  }, [cfg]);
 
-  // State
-  const [score, setScore] = useState(0);
   const [paused, setPaused] = useState(true);
   const pausedRef = useRef(paused);
   useEffect(() => {
     pausedRef.current = paused;
   }, [paused]);
 
-  // Keep loop-visible config in a ref to avoid stale closures
-  const cfgRef = useRef({
-    collectionMode: cfg.collectionMode,
-    dwellMs: cfg.dwellMs,
-    cursorSize: cfg.cursorSize,
-    targetSize: cfg.targetSize
-  });
-  useEffect(() => {
-    cfgRef.current = {
-      collectionMode: cfg.collectionMode,
-      dwellMs: cfg.dwellMs,
-      cursorSize: cfg.cursorSize,
-      targetSize: cfg.targetSize
-    };
-  }, [cfg.collectionMode, cfg.dwellMs, cfg.cursorSize, cfg.targetSize]);
+  const [score, setScore] = useState(0);
 
-  const palette = PALETTE[cfg.paletteIndex] ?? PALETTE[0];
+  const stageRef = useRef<HTMLDivElement>(null);
+  const cursorRef = useRef<HTMLDivElement>(null);
+  const targetRef = useRef<HTMLDivElement>(null);
 
-  // Helpers to detect when OS/browser may auto-darken and counter it for light backgrounds (Edge)
-  const toRgb = (hex: string) => {
-    const h = hex.replace('#', '');
-    const bigint = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h, 16);
-    return { r: (bigint >> 16) & 255, g: (bigint >> 8) & 255, b: bigint & 255 };
-  };
-  const luminance = (hex: string) => {
-    const { r, g, b } = toRgb(hex);
-    const convert = (v: number) => {
-      const s = v / 255;
-      return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
-    };
-    const rL = convert(r);
-    const gL = convert(g);
-    const bL = convert(b);
-    return 0.2126 * rL + 0.7152 * gL + 0.0722 * bL;
-  };
-  const prefersDark = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const palette = useMemo(() => PALETTE[cfg.paletteIndex]!, [cfg.paletteIndex]);
+
+  // Darkening guard for light backgrounds in Edge/Windows HC
+  const prefersDark =
+    typeof window !== 'undefined' &&
+    window.matchMedia &&
+    window.matchMedia('(prefers-color-scheme: dark)').matches;
   const bgIsLight = luminance(palette.bg) > 0.6; // treat near-white as light
   const [fixDarkening, setFixDarkening] = useState<boolean>(prefersDark && bgIsLight);
 
   // Detect if computed background is darker than intended (Edge/OS darking) and toggle fix
-  const parseComputedRgb = (css: string) => {
-    const m = css.match(/rgba?\((\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
-    if (!m) return { r: 0, g: 0, b: 0 };
-    return { r: Number(m[1]), g: Number(m[2]), b: Number(m[3]) };
-  };
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
     const intendedLum = luminance(palette.bg);
     const raf = requestAnimationFrame(() => {
       const actual = getComputedStyle(stage).backgroundColor;
-      const actualLum = luminance(
-        (() => {
-          const { r, g, b } = parseComputedRgb(actual);
-          const hex = `#${[r, g, b]
-            .map((v) => v.toString(16).padStart(2, '0'))
-            .join('')}`;
-          return hex;
-        })()
-      );
+      const m = actual.match(/rgba?\((\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+      if (!m) return;
+      const r = Number(m[1]), g = Number(m[2]), b = Number(m[3]);
+      const hex = `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+      const actualLum = luminance(hex);
       if (intendedLum > 0.6 && actualLum < 0.4) {
         setFixDarkening(true);
       } else if (intendedLum <= 0.6) {
-        // For darker palettes, don't force invert
         setFixDarkening(false);
       } else {
         setFixDarkening(false);
@@ -305,8 +295,8 @@ function TargetCollectionComponent({ managers }: { managers: { a11y: Accessibili
     if (!stage || !el) return;
     const p = randomTarget(stage);
     targetPosRef.current = p;
-  const half = cfg.targetSize / 2;
-  el.style.transform = `translate(${p.x - half}px, ${p.y - half}px)`;
+    const half = cfg.targetSize / 2;
+    el.style.transform = `translate(${p.x - half}px, ${p.y - half}px)`;
     managers.a11y.announce('Target appeared ' + describeLocation(p, stage));
   };
 
@@ -333,7 +323,7 @@ function TargetCollectionComponent({ managers }: { managers: { a11y: Accessibili
     }
     setScore((s) => s + 1);
     managers.a11y.announce('Target collected');
-    if (cfg.soundOn) playSuccess(cfg.volume);
+  if (cfg.soundOn) playSuccess();
     // place next
     setTimeout(() => {
       placeTarget();
@@ -347,7 +337,7 @@ function TargetCollectionComponent({ managers }: { managers: { a11y: Accessibili
     const c = posRef.current;
     const t = targetPosRef.current;
     const dist = Math.hypot(c.x - t.x, c.y - t.y);
-    const generous = (cfgRef.current.cursorSize + cfgRef.current.targetSize) / 2 * 1.05; // slightly generous detection
+    const generous = ((cfgRef.current.cursorSize + cfgRef.current.targetSize) / 2) * 1.05; // slightly generous detection
     const overlap = dist <= generous;
     overlapRef.current = overlap;
     return overlap;
@@ -361,32 +351,32 @@ function TargetCollectionComponent({ managers }: { managers: { a11y: Accessibili
       return;
     }
 
-  // movement: blend toward pointer location and apply keyboard/gamepad velocity
-  const kbSpeed = 2.2; // fixed keyboard/gamepad speed
-  const alpha = 0.22; // fixed smoothing factor for pointer blending
-  // always follow the pointer smoothly, even when paused
-  posRef.current.x += (pointerTargetRef.current.x - posRef.current.x) * alpha;
-  posRef.current.y += (pointerTargetRef.current.y - posRef.current.y) * alpha;
-  // apply keyboard/gamepad velocity on both axes
-  posRef.current.x += velRef.current.x * kbSpeed;
-  posRef.current.y += velRef.current.y * kbSpeed;
-  const halfCursor = cfgRef.current.cursorSize / 2;
-  posRef.current.x = Math.max(halfCursor, Math.min(stage.width - halfCursor, posRef.current.x));
-  posRef.current.y = Math.max(halfCursor, Math.min(stage.height - halfCursor, posRef.current.y));
+    // movement: blend toward pointer location and apply keyboard/gamepad velocity
+    const kbSpeed = 2.2; // fixed keyboard/gamepad speed
+    const alpha = 0.22; // fixed smoothing factor for pointer blending
+    // always follow the pointer smoothly, even when paused
+    posRef.current.x += (pointerTargetRef.current.x - posRef.current.x) * alpha;
+    posRef.current.y += (pointerTargetRef.current.y - posRef.current.y) * alpha;
+    // apply keyboard/gamepad velocity on both axes
+    posRef.current.x += velRef.current.x * kbSpeed;
+    posRef.current.y += velRef.current.y * kbSpeed;
+    const halfCursor = cfgRef.current.cursorSize / 2;
+    posRef.current.x = Math.max(halfCursor, Math.min(stage.width - halfCursor, posRef.current.x));
+    posRef.current.y = Math.max(halfCursor, Math.min(stage.height - halfCursor, posRef.current.y));
 
-  // attraction removed in v3
+    // attraction removed in v3
 
-  cursor.style.transform = `translate(${posRef.current.x - halfCursor}px, ${posRef.current.y - halfCursor}px)`;
-  if (!pausedRef.current) {
+    cursor.style.transform = `translate(${posRef.current.x - halfCursor}px, ${posRef.current.y - halfCursor}px)`;
+    if (!pausedRef.current) {
       const overlap = checkCollision();
       if (!collectedGuardRef.current) {
-    if (cfgRef.current.collectionMode === 'instant' && overlap) {
+        if (cfgRef.current.collectionMode === 'instant' && overlap) {
           collectTarget();
-    } else if (cfgRef.current.collectionMode === 'dwell') {
+        } else if (cfgRef.current.collectionMode === 'dwell') {
           const now = performance.now();
           if (overlap) {
             if (dwellStartRef.current == null) dwellStartRef.current = now;
-      if (now - dwellStartRef.current >= cfgRef.current.dwellMs) {
+            if (now - (dwellStartRef.current ?? now) >= cfgRef.current.dwellMs) {
               collectTarget();
               dwellStartRef.current = null;
             }
@@ -430,8 +420,14 @@ function TargetCollectionComponent({ managers }: { managers: { a11y: Accessibili
     const onResize = () => {
       const st = stageRef.current?.getBoundingClientRect();
       if (!st) return;
-      posRef.current.x = Math.max(cfg.cursorSize / 2, Math.min(st.width - cfg.cursorSize / 2, posRef.current.x));
-      posRef.current.y = Math.max(cfg.cursorSize / 2, Math.min(st.height - cfg.cursorSize / 2, posRef.current.y));
+      posRef.current.x = Math.max(
+        cfg.cursorSize / 2,
+        Math.min(st.width - cfg.cursorSize / 2, posRef.current.x)
+      );
+      posRef.current.y = Math.max(
+        cfg.cursorSize / 2,
+        Math.min(st.height - cfg.cursorSize / 2, posRef.current.y)
+      );
     };
     window.addEventListener('resize', onResize);
     return () => {
@@ -498,7 +494,7 @@ function TargetCollectionComponent({ managers }: { managers: { a11y: Accessibili
       border: `4px solid ${palette.cursor}`,
       borderRadius: cfg.cursorShape === 'circle' ? '50%' : '8px',
       position: 'absolute',
-  transform: `translate(${posRef.current.x - size / 2}px, ${posRef.current.y - size / 2}px)`,
+      transform: `translate(${posRef.current.x - size / 2}px, ${posRef.current.y - size / 2}px)`,
       pointerEvents: 'none',
       // Always-visible halo so cursor stands out over target/background
       boxShadow: `0 0 0 3px ${halo}`,
@@ -515,29 +511,36 @@ function TargetCollectionComponent({ managers }: { managers: { a11y: Accessibili
       background: palette.target,
       borderRadius: '50%',
       position: 'absolute',
-  transform: `translate(${targetPosRef.current.x - size / 2}px, ${targetPosRef.current.y - size / 2}px)`,
+      transform: `translate(${targetPosRef.current.x - size / 2}px, ${targetPosRef.current.y - size / 2}px)`,
       zIndex: 1
     };
     return common;
   }, [cfg.targetSize, palette.target]);
+
+  // convenience computed values for range fill
+  const rangeFill = {
+    cursor: `${((cfg.cursorSize - 20) / (100 - 20)) * 100}%`,
+    target: `${((cfg.targetSize - 50) / (200 - 50)) * 100}%`,
+    dwell: `${((cfg.dwellMs - 100) / (1500 - 100)) * 100}%`
+  } as const;
 
   return (
     <div
       ref={stageRef}
       className="tc-stage"
       style={{
-  width: '100%',
-  height: '100%',
+        width: '100%',
+        height: '100%',
         border: '4px solid var(--color-border)',
         borderRadius: '12px',
         position: 'relative',
         background: palette.bg,
-  overflow: 'hidden',
-  // Counter Edge/OS auto-darkening only when palette expects light bg
-  filter: fixDarkening ? 'invert(1) hue-rotate(180deg)' : undefined,
-  willChange: fixDarkening ? 'filter' : undefined,
-  touchAction: 'none',
-  cursor: 'none'
+        overflow: 'hidden',
+        // Counter Edge/OS auto-darkening only when palette expects light bg
+        filter: fixDarkening ? 'invert(1) hue-rotate(180deg)' : undefined,
+        willChange: fixDarkening ? 'filter' : undefined,
+        touchAction: 'none',
+        cursor: 'none'
       }}
       aria-label="Target Collection stage"
       tabIndex={0}
@@ -566,8 +569,8 @@ function TargetCollectionComponent({ managers }: { managers: { a11y: Accessibili
       onPointerDown={() => {
         if (cfgRef.current.collectionMode !== 'press') return;
         if (pausedRef.current) return;
-  const over = checkCollision();
-  if (!collectedGuardRef.current && (over || overlapRef.current)) collectTarget();
+        const over = checkCollision();
+        if (!collectedGuardRef.current && (over || overlapRef.current)) collectTarget();
       }}
     >
       {/* Cursor */}
@@ -604,102 +607,112 @@ function TargetCollectionComponent({ managers }: { managers: { a11y: Accessibili
         Score: {score}
       </div>
 
-    {/* Config Panel */}
-  {!paused && null}
-  {paused && (
-  <div className="tc-config" role="region" aria-label="Settings">
+      {/* Config Panel */}
+      {!paused ? null : (
+        <div className="tc-config" role="region" aria-label="Settings">
+      <fieldset className="tc-group">
+            <legend>Appearance</legend>
+      <label className="tc-row">
+              Cursor size
+              <input
+                type="range"
+                min={20}
+                max={100}
+                value={cfg.cursorSize}
+                style={{ ['--_filled' as any]: rangeFill.cursor }}
+        title={`${cfg.cursorSize}px`}
+                onChange={(e) => setCfg({ ...cfg, cursorSize: Number(e.currentTarget.value) })}
+              />
+            </label>
+
+            <label className="tc-row">
+              Cursor shape
+              <select
+                value={cfg.cursorShape}
+                onChange={(e) =>
+                  setCfg({ ...cfg, cursorShape: e.currentTarget.value as TCConfig['cursorShape'] })
+                }
+              >
+                <option value="circle">Circle</option>
+                <option value="square">Square</option>
+                <option value="cross">Cross</option>
+              </select>
+            </label>
+
+            <label className="tc-row">
+              Palette
+              <select
+                value={cfg.paletteIndex}
+                onChange={(e) => setCfg({ ...cfg, paletteIndex: Number(e.currentTarget.value) })}
+              >
+                {PALETTE.map((p, i) => (
+                  <option key={i} value={i}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+      <label className="tc-row">
+              Target size
+              <input
+                type="range"
+                min={50}
+                max={200}
+                value={cfg.targetSize}
+                style={{ ['--_filled' as any]: rangeFill.target }}
+        title={`${cfg.targetSize}px`}
+                onChange={(e) => setCfg({ ...cfg, targetSize: Number(e.currentTarget.value) })}
+              />
+            </label>
+          </fieldset>
+
+          <fieldset className="tc-group">
+            <legend>Audio</legend>
+            <label className="tc-row">
+              Success sound
+              <input
+                type="checkbox"
+                checked={cfg.soundOn}
+                onChange={(e) => setCfg({ ...cfg, soundOn: e.currentTarget.checked })}
+              />
+            </label>
+          </fieldset>
+
+          <fieldset className="tc-group">
+            <legend>Interaction</legend>
+            {/* Attraction control removed in v3 */}
+            <label className="tc-row">
+              Collect by
+              <select
+                value={cfg.collectionMode}
+                onChange={(e) =>
+                  setCfg({ ...cfg, collectionMode: e.currentTarget.value as TCConfig['collectionMode'] })
+                }
+              >
+                <option value="instant">Instant (on overlap)</option>
+                <option value="dwell">Dwell on target</option>
+                <option value="press">Press (Space/Enter/Click)</option>
+              </select>
+            </label>
+      {cfg.collectionMode === 'dwell' && (
         <label className="tc-row">
-          Cursor size
-          <input
-            type="range"
-            min={20}
-            max={100}
-            value={cfg.cursorSize}
-            onChange={(e) => setCfg({ ...cfg, cursorSize: Number(e.currentTarget.value) })}
-          />
-        </label>
-        
-        <label className="tc-row">
-          Cursor shape
-          <select
-            value={cfg.cursorShape}
-            onChange={(e) => setCfg({ ...cfg, cursorShape: e.currentTarget.value as TCConfig['cursorShape'] })}
-          >
-            <option value="circle">Circle</option>
-            <option value="square">Square</option>
-            <option value="cross">Cross</option>
-          </select>
-        </label>
-        <label className="tc-row">
-          Palette
-          <select
-            value={cfg.paletteIndex}
-            onChange={(e) => setCfg({ ...cfg, paletteIndex: Number(e.currentTarget.value) })}
-          >
-            {PALETTE.map((p, i) => (
-              <option key={i} value={i}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="tc-row">
-          Target size
-          <input
-            type="range"
-            min={50}
-            max={200}
-            value={cfg.targetSize}
-            onChange={(e) => setCfg({ ...cfg, targetSize: Number(e.currentTarget.value) })}
-          />
-        </label>
-        <label className="tc-row">
-          Success sound
-          <input
-            type="checkbox"
-            checked={cfg.soundOn}
-            onChange={(e) => setCfg({ ...cfg, soundOn: e.currentTarget.checked })}
-          />
-        </label>
-        <label className="tc-row">
-          Volume
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.05}
-            value={cfg.volume}
-            onChange={(e) => setCfg({ ...cfg, volume: Number(e.currentTarget.value) })}
-            disabled={!cfg.soundOn}
-          />
-        </label>
-  {/* Attraction control removed in v3 */}
-        <label className="tc-row">
-          Collect by
-          <select
-            value={cfg.collectionMode}
-            onChange={(e) => setCfg({ ...cfg, collectionMode: e.currentTarget.value as TCConfig['collectionMode'] })}
-          >
-            <option value="instant">Instant (on overlap)</option>
-            <option value="dwell">Dwell on target</option>
-            <option value="press">Press (Space/Enter/Click)</option>
-          </select>
-        </label>
-        {cfg.collectionMode === 'dwell' && (
-          <label className="tc-row">
-            Dwell time (ms)
-            <input
-              type="range"
-              min={100}
-              max={1500}
-              step={50}
-              value={cfg.dwellMs}
-              onChange={(e) => setCfg({ ...cfg, dwellMs: Number(e.currentTarget.value) })}
-            />
-          </label>
-        )}
-  </div>
-  )}
+                Dwell time (ms)
+                <input
+                  type="range"
+                  min={100}
+                  max={1500}
+                  step={50}
+                  value={cfg.dwellMs}
+                  style={{ ['--_filled' as any]: rangeFill.dwell }}
+          title={`${cfg.dwellMs} ms`}
+                  onChange={(e) => setCfg({ ...cfg, dwellMs: Number(e.currentTarget.value) })}
+                />
+              </label>
+            )}
+          </fieldset>
+        </div>
+      )}
     </div>
   );
 }
