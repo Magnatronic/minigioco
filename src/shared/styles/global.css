@@ -127,9 +127,9 @@ body {
 .tc-config {
   position: absolute; left: 12px; bottom: 12px;
   display: grid; gap: .5rem;
-  background: rgba(255,255,255,0.9);
-  color: #000;
-  border: 2px solid #000; border-radius: 8px;
+  background: var(--color-panel-bg);
+  color: var(--color-panel-fg);
+  border: 2px solid var(--color-panel-border); border-radius: 8px;
   padding: .75rem;
   cursor: default;
   z-index: 10; /* ensure above target/cursor */

@@ -10,6 +10,11 @@
   --color-border: #d0d0d0;
   --color-btn: #1e90ff;
   --color-btn-fg: #ffffff;
+
+  /* Panel tokens (used by game config overlay) */
+  --color-panel-bg: rgba(255, 255, 255, 0.92);
+  --color-panel-fg: #000000;
+  --color-panel-border: #000000;
 }
 :root[data-high-contrast="on"] {
   --color-bg: #000;
@@ -18,4 +23,9 @@
   --color-border: #fff;
   --color-btn: #ffd800;
   --color-btn-fg: #000;
+
+  /* High-contrast panel palette */
+  --color-panel-bg: rgba(0, 0, 0, 0.92);
+  --color-panel-fg: #ffffff;
+  --color-panel-border: #ffffff;
 }
