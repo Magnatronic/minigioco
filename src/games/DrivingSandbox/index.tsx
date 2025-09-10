@@ -9,14 +9,29 @@ import { useDeviceInput } from '../../shared/hooks/useDeviceInput';
 
 // Simple driver to test keyboard/gamepad input in an open field.
 
+// High-contrast palette pairs (vehicle on background)
+const PALETTE = [
+  { name: 'Yellow on Blue', car: '#ffd800', bg: '#0033aa' },
+  { name: 'Blue on Yellow', car: '#0033aa', bg: '#ffd800' },
+  { name: 'White on Black', car: '#ffffff', bg: '#000000' },
+  { name: 'Black on White', car: '#000000', bg: '#ffffff' },
+  { name: 'Red on White', car: '#d10f0f', bg: '#ffffff' },
+  { name: 'Green on White', car: '#0c8a1f', bg: '#ffffff' },
+  { name: 'White on Dark Gray', car: '#ffffff', bg: '#222222' },
+  { name: 'Black on Light Gray', car: '#000000', bg: '#dddddd' }
+] as const;
+
 const schema: GameConfigSchema = {
-  version: 1,
+  version: 2,
   properties: {
     speedMult: { type: 'number', min: 1, max: 10 },
     turnDegPerSec: { type: 'number', min: 30, max: 240 },
     friction: { type: 'number', min: 0, max: 0.2 },
     wrapEdges: { type: 'boolean' },
-    showGrid: { type: 'boolean' }
+    showGrid: { type: 'boolean' },
+    vehicleShape: { type: 'string' },
+    vehicleSize: { type: 'number', min: 24, max: 120 },
+    paletteIndex: { type: 'number', min: 0, max: PALETTE.length - 1 }
   }
 };
 
@@ -26,6 +41,9 @@ type DSConfig = {
   friction: number; // px/s^2 decel approx, applied continuously
   wrapEdges: boolean;
   showGrid: boolean;
+  vehicleShape: 'car' | 'rectangle';
+  vehicleSize: number;
+  paletteIndex: number;
 };
 
 const defaultCfg: DSConfig = {
@@ -33,7 +51,10 @@ const defaultCfg: DSConfig = {
   turnDegPerSec: 140,
   friction: 0.06,
   wrapEdges: false,
-  showGrid: true
+  showGrid: true,
+  vehicleShape: 'car',
+  vehicleSize: 44,
+  paletteIndex: 0
 };
 
 function clamp(n: number, min: number, max: number) {
@@ -47,7 +68,12 @@ function sanitize(raw?: Partial<DSConfig>): DSConfig {
     turnDegPerSec: clamp(Number((r as any).turnDegPerSec ?? defaultCfg.turnDegPerSec), 30, 240),
     friction: clamp(Number((r as any).friction ?? defaultCfg.friction), 0, 0.2),
     wrapEdges: (r as any).wrapEdges !== undefined ? Boolean((r as any).wrapEdges) : defaultCfg.wrapEdges,
-    showGrid: (r as any).showGrid !== undefined ? Boolean((r as any).showGrid) : defaultCfg.showGrid
+    showGrid: (r as any).showGrid !== undefined ? Boolean((r as any).showGrid) : defaultCfg.showGrid,
+    vehicleShape: ['car', 'rectangle'].includes((r as any).vehicleShape)
+      ? ((r as any).vehicleShape as DSConfig['vehicleShape'])
+      : defaultCfg.vehicleShape,
+    vehicleSize: clamp(Number((r as any).vehicleSize ?? defaultCfg.vehicleSize), 24, 120),
+    paletteIndex: clamp(Number((r as any).paletteIndex ?? defaultCfg.paletteIndex), 0, PALETTE.length - 1)
   };
 }
 
@@ -70,29 +96,24 @@ class DrivingSandboxGame implements IGame {
   updateConfig(_config: Partial<GameConfig>): void {}
 }
 
-function Car({ x, y, angle, color, size = 38 }: { x: number; y: number; angle: number; color: string; size?: number }) {
+function CarShape({ color, shape, size }: { color: string; shape: 'car' | 'rectangle'; size: number }) {
+  if (shape === 'rectangle') {
+    const w = size;
+    const h = size * 0.6;
+    return (
+      <svg width={w} height={h} viewBox="0 0 100 60" role="img" aria-label="vehicle">
+        <rect x="8" y="8" width="84" height="44" rx="10" ry="10" fill={color} stroke="var(--color-panel-border)" strokeWidth="4" />
+      </svg>
+    );
+  }
   const w = size;
   const h = size * 0.6;
-  // Triangle-like car pointing to +X local axis
   return (
-    <div
-      style={{
-        position: 'absolute',
-        transform: `translate(${x - w / 2}px, ${y - h / 2}px) rotate(${(angle * 180) / Math.PI}deg)`,
-        transformOrigin: '50% 50%',
-        width: w,
-        height: h,
-        pointerEvents: 'none',
-        zIndex: 2
-      }}
-      aria-hidden
-    >
-      <svg width={w} height={h} viewBox="0 0 100 60" role="img" aria-label="vehicle">
-        <polygon points="80,30 10,55 10,5" fill={color} stroke="var(--color-panel-border)" strokeWidth="4" />
-        <circle cx="25" cy="50" r="5" fill="black" />
-        <circle cx="25" cy="10" r="5" fill="black" />
-      </svg>
-    </div>
+    <svg width={w} height={h} viewBox="0 0 100 60" role="img" aria-label="vehicle">
+      <polygon points="80,30 10,55 10,5" fill={color} stroke="var(--color-panel-border)" strokeWidth="4" />
+      <circle cx="25" cy="50" r="5" fill="black" />
+      <circle cx="25" cy="10" r="5" fill="black" />
+    </svg>
   );
 }
 
@@ -110,6 +131,8 @@ function DrivingComponent({ managers }: { managers: { a11y: AccessibilityManager
   const pos = useRef({ x: 0, y: 0 });
   const heading = useRef(0); // radians, 0 -> +X (to right)
   const speed = useRef(0); // px/s
+  const carRef = useRef<HTMLDivElement>(null);
+  const smooth = useRef({ steer: 0, throttle: 0 });
 
   // Input
   const { vector, sourceRef } = useDeviceInput(managers.input);
@@ -123,6 +146,12 @@ function DrivingComponent({ managers }: { managers: { a11y: AccessibilityManager
       pos.current.y = r.height / 2;
       heading.current = 0;
       speed.current = 0;
+      const w = cfgRef.current.vehicleSize;
+      const h = cfgRef.current.vehicleSize * 0.6;
+      const el = carRef.current;
+      if (el) {
+        el.style.transform = `translate(${pos.current.x - w / 2}px, ${pos.current.y - h / 2}px) rotate(0deg)`;
+      }
     };
     placeCenter();
     const onResize = () => placeCenter();
@@ -135,9 +164,17 @@ function DrivingComponent({ managers }: { managers: { a11y: AccessibilityManager
     const dt = Math.min(50, dtMs) / 1000; // seconds
 
     // Only use keyboard/gamepad for driving, ignore pointer
-  const steer = sourceRef.current === 'pointer' ? 0 : clamp(vector.x, -1, 1);
+  const targetSteer = sourceRef.current === 'pointer' ? 0 : clamp(vector.x, -1, 1);
   // Invert Y so Up (y=-1) means forward throttle
-  const throttle = sourceRef.current === 'pointer' ? 0 : clamp(-vector.y, -1, 1);
+  const targetThrottle = sourceRef.current === 'pointer' ? 0 : clamp(-vector.y, -1, 1);
+
+    // Smooth inputs to avoid jerkiness
+    const smoothingPerSec = 10; // higher = snappier
+    const a = 1 - Math.exp(-smoothingPerSec * dt);
+    smooth.current.steer += (targetSteer - smooth.current.steer) * a;
+    smooth.current.throttle += (targetThrottle - smooth.current.throttle) * a;
+    const steer = smooth.current.steer;
+    const throttle = smooth.current.throttle;
 
     const baseMax = 220; // px/s base max speed
     const maxFwd = baseMax * cfgRef.current.speedMult; // 220..2200
@@ -164,9 +201,9 @@ function DrivingComponent({ managers }: { managers: { a11y: AccessibilityManager
     const speedFactor = 0.6 + 0.4 / (1 + Math.abs(speed.current) / (maxFwd * 0.5));
     heading.current += steer * steerDir * turnRate * speedFactor * dt;
 
-    // Integrate position
-    pos.current.x += Math.cos(heading.current) * speed.current * dt;
-    pos.current.y += Math.sin(heading.current) * speed.current * dt;
+  // Integrate position
+  pos.current.x += Math.cos(heading.current) * speed.current * dt;
+  pos.current.y += Math.sin(heading.current) * speed.current * dt;
 
     const r = stageRef.current?.getBoundingClientRect();
     if (!r) return;
@@ -184,6 +221,14 @@ function DrivingComponent({ managers }: { managers: { a11y: AccessibilityManager
       if (nx !== pos.current.x) speed.current = 0;
       if (ny !== pos.current.y) speed.current = 0;
       pos.current.x = nx; pos.current.y = ny;
+    }
+
+    // Apply transform directly for smooth visuals
+    const w = cfgRef.current.vehicleSize;
+    const h = cfgRef.current.vehicleSize * 0.6;
+    const el = carRef.current;
+    if (el) {
+      el.style.transform = `translate(${pos.current.x - w / 2}px, ${pos.current.y - h / 2}px) rotate(${(heading.current * 180) / Math.PI}deg)`;
     }
   }, true);
 
@@ -206,16 +251,21 @@ function DrivingComponent({ managers }: { managers: { a11y: AccessibilityManager
   }, []);
 
   // Visuals
+  const palette = useMemo(() => PALETTE[cfg.paletteIndex]!, [cfg.paletteIndex]);
   const gridBackground = useMemo(() => {
-    if (!cfg.showGrid) return 'var(--color-stage-bg, #0b0b0b)';
-    // Dual grid for visibility in HC
+    const base = palette.bg;
+    if (!cfg.showGrid) return base;
     const cell = 40;
+    const light = 'rgba(255,255,255,0.10)';
+    const mid = 'rgba(0,0,0,0.10)';
     return `
-      radial-gradient(circle at 1px 1px, rgba(255,255,255,0.08) 1px, transparent 1px) 0 0 / ${cell}px ${cell}px,
-      linear-gradient(0deg, rgba(255,255,255,0.06) 1px, transparent 1px) 0 0 / ${cell * 5}px ${cell * 5}px,
-      #0b0b0b
+      linear-gradient(0deg, ${light} 1px, transparent 1px) 0 0 / ${cell}px ${cell}px,
+      linear-gradient(90deg, ${light} 1px, transparent 1px) 0 0 / ${cell}px ${cell}px,
+      linear-gradient(0deg, ${mid} 1px, transparent 1px) 0 0 / ${cell * 5}px ${cell * 5}px,
+      linear-gradient(90deg, ${mid} 1px, transparent 1px) 0 0 / ${cell * 5}px ${cell * 5}px,
+      ${base}
     `;
-  }, [cfg.showGrid]);
+  }, [cfg.showGrid, palette.bg]);
 
   // HUD derived values
   const [hudTick, setHudTick] = useState(0);
@@ -239,8 +289,14 @@ function DrivingComponent({ managers }: { managers: { a11y: AccessibilityManager
         }}
         onPointerDown={() => {/* pointer not used for driving */}}
       >
-        {/* Vehicle */}
-        <Car x={pos.current.x} y={pos.current.y} angle={heading.current} color="#ffd800" />
+        {/* Vehicle (wrapper transformed imperatively for smoothness) */}
+        <div
+          ref={carRef}
+          style={{ position: 'absolute', transformOrigin: '50% 50%', width: cfg.vehicleSize, height: cfg.vehicleSize * 0.6, pointerEvents: 'none', zIndex: 2 }}
+          aria-hidden
+        >
+          <CarShape color={PALETTE[cfg.paletteIndex]!.car} shape={cfg.vehicleShape} size={cfg.vehicleSize} />
+        </div>
 
         {/* HUD */}
         <div
@@ -290,6 +346,40 @@ function DrivingComponent({ managers }: { managers: { a11y: AccessibilityManager
                   title={`${cfg.friction.toFixed(2)}`}
                   onChange={(e) => setCfg({ ...cfg, friction: Number(e.currentTarget.value) })}
                 />
+              </SettingsRow>
+            </SettingsGroup>
+            
+            <SettingsGroup title="Appearance">
+              <SettingsRow label="Vehicle shape">
+                <select
+                  value={cfg.vehicleShape}
+                  onChange={(e) => setCfg({ ...cfg, vehicleShape: e.currentTarget.value as DSConfig['vehicleShape'] })}
+                >
+                  <option value="car">Car</option>
+                  <option value="rectangle">Rectangle</option>
+                </select>
+              </SettingsRow>
+              <SettingsRow label="Vehicle size">
+                <input
+                  type="range"
+                  min={24}
+                  max={120}
+                  step={2}
+                  value={cfg.vehicleSize}
+                  style={{ ['--_filled' as any]: `${((cfg.vehicleSize - 24) / (120 - 24)) * 100}%` }}
+                  title={`${cfg.vehicleSize}px`}
+                  onChange={(e) => setCfg({ ...cfg, vehicleSize: Number(e.currentTarget.value) })}
+                />
+              </SettingsRow>
+              <SettingsRow label="Palette">
+                <select
+                  value={cfg.paletteIndex}
+                  onChange={(e) => setCfg({ ...cfg, paletteIndex: Number(e.currentTarget.value) })}
+                >
+                  {PALETTE.map((p, i) => (
+                    <option key={i} value={i}>{p.name}</option>
+                  ))}
+                </select>
               </SettingsRow>
             </SettingsGroup>
 
