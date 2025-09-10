@@ -33,7 +33,8 @@ const schema: GameConfigSchema = {
     targetSize: { type: 'number', min: 50, max: 200 },
     soundOn: { type: 'boolean' },
     collectionMode: { type: 'string' }, // instant | dwell | press
-    dwellMs: { type: 'number', min: 100, max: 1500 }
+  dwellMs: { type: 'number', min: 100, max: 1500 },
+  moveSpeed: { type: 'number', min: 1, max: 10 }
   }
 };
 
@@ -45,6 +46,7 @@ export type TCConfig = {
   soundOn: boolean;
   collectionMode: 'instant' | 'dwell' | 'press';
   dwellMs: number;
+  moveSpeed: number; // 1..10 multiplier
 };
 
 const defaultConfig: TCConfig = {
@@ -54,7 +56,8 @@ const defaultConfig: TCConfig = {
   targetSize: 120,
   soundOn: true,
   collectionMode: 'instant',
-  dwellMs: 600
+  dwellMs: 600,
+  moveSpeed: 3
 };
 
 function clamp(n: number, min: number, max: number) {
@@ -82,6 +85,7 @@ function sanitizeConfig(raw: Partial<TCConfig> | undefined): TCConfig {
     : defaultConfig.collectionMode;
   const dwellMs = clamp(Number((r as any).dwellMs ?? defaultConfig.dwellMs), 100, 1500);
   const soundOn = (r as any).soundOn !== undefined ? Boolean((r as any).soundOn) : defaultConfig.soundOn;
+  const moveSpeed = clamp(Number((r as any).moveSpeed ?? defaultConfig.moveSpeed), 1, 10);
   return {
     cursorSize,
     cursorShape,
@@ -89,7 +93,8 @@ function sanitizeConfig(raw: Partial<TCConfig> | undefined): TCConfig {
     targetSize,
     soundOn,
     collectionMode,
-    dwellMs
+    dwellMs,
+    moveSpeed
   };
 }
 
@@ -265,7 +270,9 @@ function TargetCollectionComponent({
   const posRef = useRef({ x: 0, y: 0 });
   const pointerTargetRef = useRef({ x: 0, y: 0 });
   const targetPosRef = useRef({ x: 0, y: 0 });
+  const lastSourceRef = useRef<'keyboard' | 'gamepad' | 'pointer'>('pointer');
   const rafRef = useRef<number | null>(null);
+  const lastTimeRef = useRef<number | null>(null);
   const unsubRef = useRef<() => void>();
   const triggerUnsubRef = useRef<() => void>();
   const overlapRef = useRef(false);
@@ -351,15 +358,21 @@ function TargetCollectionComponent({
       return;
     }
 
-    // movement: blend toward pointer location and apply keyboard/gamepad velocity
-    const kbSpeed = 2.2; // fixed keyboard/gamepad speed
+  // movement: blend toward pointer location only when pointer is the active source
+  const now = performance.now();
+  const dt = lastTimeRef.current == null ? 16.7 : Math.min(50, now - lastTimeRef.current);
+  lastTimeRef.current = now;
+  const base = cfgRef.current.moveSpeed; // 1..10
+  const perSource = lastSourceRef.current === 'gamepad' ? 1.3 : lastSourceRef.current === 'keyboard' ? 1.0 : 0;
+  const speedPerMs = (base * perSource) / 16.7;
     const alpha = 0.22; // fixed smoothing factor for pointer blending
-    // always follow the pointer smoothly, even when paused
-    posRef.current.x += (pointerTargetRef.current.x - posRef.current.x) * alpha;
-    posRef.current.y += (pointerTargetRef.current.y - posRef.current.y) * alpha;
-    // apply keyboard/gamepad velocity on both axes
-    posRef.current.x += velRef.current.x * kbSpeed;
-    posRef.current.y += velRef.current.y * kbSpeed;
+    if (lastSourceRef.current === 'pointer') {
+      posRef.current.x += (pointerTargetRef.current.x - posRef.current.x) * alpha;
+      posRef.current.y += (pointerTargetRef.current.y - posRef.current.y) * alpha;
+    }
+  // apply keyboard/gamepad velocity on both axes
+  posRef.current.x += velRef.current.x * speedPerMs * dt;
+  posRef.current.y += velRef.current.y * speedPerMs * dt;
     const halfCursor = cfgRef.current.cursorSize / 2;
     posRef.current.x = Math.max(halfCursor, Math.min(stage.width - halfCursor, posRef.current.x));
     posRef.current.y = Math.max(halfCursor, Math.min(stage.height - halfCursor, posRef.current.y));
@@ -392,10 +405,22 @@ function TargetCollectionComponent({
 
   // Input subscriptions
   useEffect(() => {
-    unsubRef.current = managers.input.onMove((v) => {
+    unsubRef.current = managers.input.onMove((v, source) => {
       // simple easing to smooth
       velRef.current.x = v.x;
       velRef.current.y = v.y;
+      if (source !== 'pointer') {
+        const mag = Math.hypot(v.x, v.y);
+        if (mag > 0.0001) {
+          // Switch control only on real input; park pointer to avoid tug-of-war
+          pointerTargetRef.current.x = posRef.current.x;
+          pointerTargetRef.current.y = posRef.current.y;
+          lastSourceRef.current = source;
+        }
+        // If no movement from non-pointer input, keep current source (likely pointer)
+      } else {
+        lastSourceRef.current = 'pointer';
+      }
     });
     return () => unsubRef.current?.();
   }, [managers.input]);
@@ -551,11 +576,13 @@ function TargetCollectionComponent({
         const cy = e.clientY - r.top;
         const half = cfg.cursorSize / 2;
         const x = Math.max(half, Math.min(r.width - half, cx));
-        const y = Math.max(half, Math.min(r.height - half, cy));
-        pointerTargetRef.current.x = x;
-        pointerTargetRef.current.y = y;
-        posRef.current.x = x;
-        posRef.current.y = y;
+  const y = Math.max(half, Math.min(r.height - half, cy));
+  pointerTargetRef.current.x = x;
+  pointerTargetRef.current.y = y;
+  posRef.current.x = x;
+  posRef.current.y = y;
+  // pointer takes control
+  lastSourceRef.current = 'pointer';
       }}
       onPointerMove={(e) => {
         const r = stageRef.current?.getBoundingClientRect();
@@ -563,8 +590,15 @@ function TargetCollectionComponent({
         const cx = e.clientX - r.left;
         const cy = e.clientY - r.top;
         const half = cfg.cursorSize / 2;
-        pointerTargetRef.current.x = Math.max(half, Math.min(r.width - half, cx));
-        pointerTargetRef.current.y = Math.max(half, Math.min(r.height - half, cy));
+  const px = Math.max(half, Math.min(r.width - half, cx));
+  const py = Math.max(half, Math.min(r.height - half, cy));
+  pointerTargetRef.current.x = px;
+  pointerTargetRef.current.y = py;
+  // pointer takes control only if move is significant
+  const d = Math.hypot(px - posRef.current.x, py - posRef.current.y);
+  if (d > 2) lastSourceRef.current = 'pointer';
+  velRef.current.x = 0;
+  velRef.current.y = 0;
       }}
       onPointerDown={() => {
         if (cfgRef.current.collectionMode !== 'press') return;
@@ -694,6 +728,19 @@ function TargetCollectionComponent({
                 <option value="dwell">Dwell on target</option>
                 <option value="press">Press (Space/Enter/Click)</option>
               </select>
+            </label>
+            <label className="tc-row">
+              Movement speed
+              <input
+                type="range"
+                min={1}
+                max={10}
+                step={1}
+                value={cfg.moveSpeed}
+                style={{ ['--_filled' as any]: `${((cfg.moveSpeed - 1) / 9) * 100}%` }}
+                title={`x${cfg.moveSpeed}`}
+                onChange={(e) => setCfg({ ...cfg, moveSpeed: Number(e.currentTarget.value) })}
+              />
             </label>
       {cfg.collectionMode === 'dwell' && (
         <label className="tc-row">
