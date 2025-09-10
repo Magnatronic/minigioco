@@ -12,8 +12,4 @@ export class ThemeManager {
   isReducedMotion(): boolean {
     return getComputedStyle(document.documentElement).getPropertyValue('--reduced-motion') === '1';
   }
-
-  setBaseFont(px: number) {
-    document.documentElement.style.fontSize = `${px}px`;
-  }
 }

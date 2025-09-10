@@ -1,6 +1,5 @@
 :root {
   --reduced-motion: 0;
-  --font-base: 18px;
   --space-1: 0.5rem;
   --space-2: 1rem;
   --space-3: 1.5rem;
@@ -11,6 +10,20 @@
   --color-border: #d0d0d0;
   --color-btn: #1e90ff;
   --color-btn-fg: #ffffff;
+
+  /* Input/Control tokens */
+  --color-input-bg: #ffffff;
+  --color-input-fg: #000000;
+  --color-input-border: #000000;
+  --color-input-track: #c8c8c8;
+  --color-input-track-filled: var(--color-accent);
+  --color-input-thumb: var(--color-accent);
+  --color-focus-ring: var(--color-accent);
+
+  /* Panel tokens (used by game config overlay) */
+  --color-panel-bg: rgba(255, 255, 255, 0.92);
+  --color-panel-fg: #000000;
+  --color-panel-border: #000000;
 }
 :root[data-high-contrast="on"] {
   --color-bg: #000;
@@ -19,4 +32,18 @@
   --color-border: #fff;
   --color-btn: #ffd800;
   --color-btn-fg: #000;
+
+  /* High-contrast panel palette */
+  --color-panel-bg: #000000;
+  --color-panel-fg: #ffffff;
+  --color-panel-border: #ffffff;
+
+  /* High-contrast inputs */
+  --color-input-bg: #000000;
+  --color-input-fg: #ffffff;
+  --color-input-border: #ffffff;
+  --color-input-track: #3a3a3a; /* dark track for contrast against yellow filled */
+  --color-input-track-filled: #ffd800; /* bright filled segment */
+  --color-input-thumb: #ffd800; /* matching thumb */
+  --color-focus-ring: #ffd800;
 }

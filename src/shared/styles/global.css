@@ -1,4 +1,4 @@
-html { font-size: var(--font-base); }
+html { font-size: 18px; }
 body {
   margin: 0;
   font-family: system-ui, Arial, sans-serif;
@@ -9,7 +9,7 @@ body {
 /* Prevent UA dark-mode auto-adjust; we manage contrast ourselves */
 :root { color-scheme: light; }
 /* Optional explicit light theme body to avoid external dark extensions */
-.app { background: var(--color-bg); color: var(--color-fg); }
+.app { background: var(--color-bg); color: var(--color-fg); min-height: 100vh; }
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
@@ -20,17 +20,33 @@ body {
 }
 .skip-link:focus { transform: translateY(0); }
 
-.app__header, .app__footer { padding: var(--space-2); border-bottom: 2px solid var(--color-border); }
-.app__footer { border-top: 2px solid var(--color-border); border-bottom: none; }
+/* Removed top header; keep footer styles only if footer returns */
+.app__footer { padding: var(--space-2); border-top: 2px solid var(--color-border); }
 
 .app__layout {
   display: grid; gap: var(--space-2);
   grid-template-areas: "sidebar main";
   grid-template-columns: 320px 1fr;
+  /* Page padding */
   padding: var(--space-2);
+  /* Ensure the content grid fills viewport height (minus padding) */
+  min-height: calc(100vh - (2 * var(--space-2)));
 }
-.app__sidebar { grid-area: sidebar; }
-.app__main { grid-area: main; min-height: 60vh; }
+.app__sidebar {
+  grid-area: sidebar;
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+}
+.sidebar__section { display: grid; gap: var(--space-1); }
+.app__main {
+  grid-area: main;
+  /* Fill available height from layout grid */
+  height: 100%;
+  min-height: 0; /* allow children to size with overflow in flex/grid */
+  display: flex;
+  flex-direction: column;
+}
 
 @media (max-width: 767px) {
   .app__layout {
@@ -66,14 +82,22 @@ body {
 
 .game-area {
   display: grid; gap: var(--space-2);
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto 1fr; /* no footer row */
   border: 2px solid var(--color-border);
+  /* Allow top whitespace consistent with page padding */
   padding: var(--space-2);
+  /* Stretch to fill parent (so stage can take remaining height) */
+  height: 100%;
+  min-height: 0;
 }
+.game-area__header { margin: 0; }
+.game-controls { margin: 0; }
 .game-stage {
   background: #f6f6f6;
   border: 2px solid var(--color-border);
   min-height: 300px;
+  /* Take all available height left by header row */
+  height: 100%;
   /* Let content stretch to edges instead of being centered */
   display: block;
   /* Avoid Windows High Contrast from forcing black background here */
@@ -81,7 +105,6 @@ body {
 }
 
 .toolbar { display: flex; gap: var(--space-1); align-items: center; }
-.font-label { display: inline-flex; gap: .5rem; align-items: center; }
 
 .consent {
   position: fixed; left: 1rem; right: 1rem; bottom: 1rem;
@@ -103,32 +126,99 @@ body {
 }
 .tc-config {
   position: absolute; left: 12px; bottom: 12px;
-  display: grid; gap: .5rem;
-  background: rgba(255,255,255,0.9);
-  color: #000;
-  border: 2px solid #000; border-radius: 8px;
+  display: grid; gap: .75rem;
+  background: var(--color-panel-bg);
+  color: var(--color-panel-fg);
+  border: 2px solid var(--color-panel-border); border-radius: 8px;
   padding: .75rem;
   cursor: default;
   z-index: 10; /* ensure above target/cursor */
 }
-.tc-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: .5rem; }
-.tc-row input[type="range"], .tc-row select, .tc-row input[type="checkbox"] {
-  min-height: 44px; min-width: 44px;
+.tc-row { display: grid; grid-template-columns: 150px 1fr; align-items: center; gap: 1.1rem; }
+.tc-config fieldset { padding: 1rem; }
+.tc-config legend { padding: 0 .5rem; font-weight: 700; }
+.tc-value { display: none; }
+/* Vertical spacing between controls inside groups */
+.tc-group { display: grid; gap: 1rem; }
+.tc-group:first-of-type { gap: 1.25rem; }
+.tc-config { font-size: .95rem; }
+.tc-row select, .tc-row input[type="checkbox"] {
+  min-height: 32px; min-width: 32px;
+}
+.tc-config input, .tc-config select {
+  background: var(--color-input-bg);
+  color: var(--color-input-fg);
+  border: 2px solid var(--color-input-border);
+  border-radius: 6px;
+  font-size: .95rem;
+}
+.tc-config label {
+  color: var(--color-panel-fg);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  font-weight: 600;
+}
+.tc-config input, .tc-config select {
+  padding: .3rem .5rem;
+  width: 100%;
+}
+.tc-config input:focus, .tc-config select:focus {
+  outline: 3px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+/* Range slider styling */
+.tc-config input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 12px; /* slimmer capsule height */
+  padding: 5px 0; /* leaves ~2px content height for the track */
+  background-clip: content-box;
+  background: linear-gradient(
+    to right,
+    var(--color-input-track-filled) var(--_filled, 0%),
+    var(--color-input-track) var(--_filled, 0%)
+  );
+  border: 1px solid var(--color-input-border);
+  border-radius: 999px;
+}
+.tc-config input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--color-input-thumb);
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 0; opacity: .75;
+}
+.tc-config input[type="range"]::-moz-range-thumb {
+  background: var(--color-input-thumb);
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 0; opacity: .75;
+}
+.tc-config input[type="range"]:hover::-webkit-slider-thumb,
+.tc-config input[type="range"]:focus::-webkit-slider-thumb,
+.tc-config input[type="range"]:hover::-moz-range-thumb,
+.tc-config input[type="range"]:focus::-moz-range-thumb { opacity: 1; }
+.tc-config input[type="range"]:focus::-webkit-slider-thumb,
+.tc-config input[type="range"]:focus::-moz-range-thumb {
+  box-shadow: 0 0 0 3px var(--color-focus-ring);
 }
 
 /* Fullscreen improvements */
 .game-stage:fullscreen,
-.tc-stage:fullscreen {
+.tc-stage:fullscreen,
+.game-area:fullscreen {
   width: 100vw !important;
   height: 100vh !important;
   border-radius: 0 !important;
 }
-.game-stage:fullscreen {
+.game-stage:fullscreen, .game-area:fullscreen .game-stage {
   border: 0 !important;
   background: #000 !important;
 }
 .game-stage:fullscreen .tc-stage,
-.tc-stage:fullscreen {
+.tc-stage:fullscreen,
+.game-area:fullscreen .tc-stage {
   width: 100% !important;
   height: 100% !important;
   border: 0 !important;

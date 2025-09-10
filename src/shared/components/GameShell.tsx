@@ -24,6 +24,7 @@ export function GameShell({
   const [state, setState] = useState({ score: 0, paused: true });
   const gameRef = useRef<ReturnType<GameDefinition['createInstance']> | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  const shellRef = useRef<HTMLElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const startedRef = useRef(false);
 
@@ -42,7 +43,7 @@ export function GameShell({
   // Keep fullscreen state in sync even when user presses ESC or uses OS UI
   useEffect(() => {
     const onFsChange = () => {
-      const el = stageRef.current;
+      const el = shellRef.current;
       const fs = document.fullscreenElement === el;
       setIsFullscreen(!!fs);
     };
@@ -59,46 +60,40 @@ export function GameShell({
   }
 
   return (
-    <section className="game-area" aria-label={`${gameDef.name} game`} tabIndex={0}>
-  <header className="game-area__header" role="group">
-        <h2>{gameDef.name}</h2>
+  <section ref={shellRef as any} className="game-area" aria-label={`${gameDef.name} game`} tabIndex={0}>
+      <header className="game-area__header" role="group">
         <div className="game-controls">
           <button
             className="btn"
+            aria-pressed={!state.paused}
             onClick={() => {
-              if (!startedRef.current) {
-                gameRef.current?.start();
-                startedRef.current = true;
-                managers.a11y.announce('Game started');
-                window.dispatchEvent(
-                  new CustomEvent('game:state', { detail: { action: 'start', id: gameDef.id } })
-                );
+              if (state.paused) {
+                if (!startedRef.current) {
+                  gameRef.current?.start();
+                  startedRef.current = true;
+                  managers.a11y.announce('Game started');
+                  window.dispatchEvent(
+                    new CustomEvent('game:state', { detail: { action: 'start', id: gameDef.id } })
+                  );
+                } else {
+                  gameRef.current?.resume();
+                  managers.a11y.announce('Game resumed');
+                  window.dispatchEvent(
+                    new CustomEvent('game:state', { detail: { action: 'resume', id: gameDef.id } })
+                  );
+                }
+                setState((s) => ({ ...s, paused: false }));
               } else {
-                gameRef.current?.resume();
-                managers.a11y.announce('Game resumed');
+                gameRef.current?.pause();
+                managers.a11y.announce('Game paused');
+                setState((s) => ({ ...s, paused: true }));
                 window.dispatchEvent(
-                  new CustomEvent('game:state', { detail: { action: 'resume', id: gameDef.id } })
+                  new CustomEvent('game:state', { detail: { action: 'pause', id: gameDef.id } })
                 );
               }
-              setState((s) => ({ ...s, paused: false }));
             }}
-            disabled={!state.paused}
           >
-            Play
-          </button>
-          <button
-            className="btn"
-            onClick={() => {
-              gameRef.current?.pause();
-              managers.a11y.announce('Game paused');
-              setState((s) => ({ ...s, paused: true }));
-              window.dispatchEvent(
-                new CustomEvent('game:state', { detail: { action: 'pause', id: gameDef.id } })
-              );
-            }}
-            disabled={state.paused}
-          >
-            Pause
+            {state.paused ? (startedRef.current ? 'Resume' : 'Play') : 'Pause'}
           </button>
           <button
             className="btn"
@@ -114,10 +109,10 @@ export function GameShell({
           >
             Reset
           </button>
-          <button
+      <button
             className="btn"
             onClick={async () => {
-              const el = stageRef.current;
+        const el = shellRef.current;
               if (!el) return;
               if (!document.fullscreenElement) {
                 await el.requestFullscreen();
@@ -149,9 +144,7 @@ export function GameShell({
         )}
       </div>
 
-      <div className="game-area__footer" role="status" aria-live="polite">
-        <span>Score: {state.score}</span>
-      </div>
+  {/* Score footer removed per design request */}
     </section>
   );
 }

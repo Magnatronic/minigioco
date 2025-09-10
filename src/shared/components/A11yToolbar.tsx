@@ -29,19 +29,6 @@ export function A11yToolbar({ theme, a11y }: Props) {
       >
         Reduced motion
       </button>
-      <label className="font-label">
-        Base font
-        <input
-          aria-label="Base font size"
-          type="range"
-          min={18}
-          max={22}
-          defaultValue={18}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-            theme.setBaseFont(Number(e.currentTarget.value));
-          }}
-        />
-      </label>
     </div>
   );
 }
