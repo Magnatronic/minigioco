@@ -176,19 +176,17 @@ function DrivingComponent({ managers }: { managers: { a11y: AccessibilityManager
     const steer = smooth.current.steer;
     const throttle = smooth.current.throttle;
 
-    const baseMax = 220; // px/s base max speed
+  const baseMax = 220; // px/s base max speed
     const maxFwd = baseMax * cfgRef.current.speedMult; // 220..2200
     const maxRev = maxFwd * 0.4; // reverse slower
-    const accel = 750; // px/s^2
+  const accel = 900; // px/s^2
     const turnRate = (cfgRef.current.turnDegPerSec * Math.PI) / 180; // rad/s at full steer
 
-    // Acceleration
-    const targetAcc = throttle * accel; // signed
-    // Integrate speed with friction
-    speed.current += targetAcc * dt;
-    // friction decel always opposes motion
-    const fr = cfgRef.current.friction * (speed.current >= 0 ? -1 : 1);
-    speed.current += fr * 1000 * dt; // scale friction into px/s^2 region
+  // Acceleration
+  const targetAcc = throttle * accel; // signed
+  // Integrate speed, then apply multiplicative drag (fraction per second)
+  speed.current += targetAcc * dt;
+  speed.current *= Math.max(0, 1 - cfgRef.current.friction * dt);
     // deadband around 0
     if (Math.abs(speed.current) < 5) speed.current = 0;
     // Clamp speeds
