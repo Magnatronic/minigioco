@@ -22,7 +22,7 @@ const PALETTE = [
 ] as const;
 
 const schema: GameConfigSchema = {
-  version: 2,
+  version: 3,
   properties: {
     speedMult: { type: 'number', min: 1, max: 6 },
     turnDegPerSec: { type: 'number', min: 20, max: 140 },
@@ -31,7 +31,11 @@ const schema: GameConfigSchema = {
     showGrid: { type: 'boolean' },
     vehicleShape: { type: 'string' },
     vehicleSize: { type: 'number', min: 24, max: 120 },
-    paletteIndex: { type: 'number', min: 0, max: PALETTE.length - 1 }
+    paletteIndex: { type: 'number', min: 0, max: PALETTE.length - 1 },
+    accel: { type: 'number', min: 200, max: 1200 },
+    decel: { type: 'number', min: 300, max: 1500 },
+    turnInPlaceDegPerSec: { type: 'number', min: 120, max: 360 },
+    reverseFactor: { type: 'number', min: 0.2, max: 0.6 }
   }
 };
 
@@ -44,6 +48,10 @@ type DSConfig = {
   vehicleShape: 'car' | 'rectangle';
   vehicleSize: number;
   paletteIndex: number;
+  accel: number; // px/s^2 forward accel
+  decel: number; // px/s^2 braking/letting go decel
+  turnInPlaceDegPerSec: number; // deg/s when pivoting near zero speed
+  reverseFactor: number; // 0.2..0.6 max reverse vs forward
 };
 
 const defaultCfg: DSConfig = {
@@ -54,7 +62,11 @@ const defaultCfg: DSConfig = {
   showGrid: true,
   vehicleShape: 'car',
   vehicleSize: 44,
-  paletteIndex: 0
+  paletteIndex: 0,
+  accel: 650,
+  decel: 950,
+  turnInPlaceDegPerSec: 220,
+  reverseFactor: 0.4
 };
 
 function clamp(n: number, min: number, max: number) {
@@ -73,7 +85,11 @@ function sanitize(raw?: Partial<DSConfig>): DSConfig {
       ? ((r as any).vehicleShape as DSConfig['vehicleShape'])
       : defaultCfg.vehicleShape,
     vehicleSize: clamp(Number((r as any).vehicleSize ?? defaultCfg.vehicleSize), 24, 120),
-    paletteIndex: clamp(Number((r as any).paletteIndex ?? defaultCfg.paletteIndex), 0, PALETTE.length - 1)
+  paletteIndex: clamp(Number((r as any).paletteIndex ?? defaultCfg.paletteIndex), 0, PALETTE.length - 1),
+  accel: clamp(Number((r as any).accel ?? defaultCfg.accel), 200, 1200),
+  decel: clamp(Number((r as any).decel ?? defaultCfg.decel), 300, 1500),
+  turnInPlaceDegPerSec: clamp(Number((r as any).turnInPlaceDegPerSec ?? defaultCfg.turnInPlaceDegPerSec), 120, 360),
+  reverseFactor: clamp(Number((r as any).reverseFactor ?? defaultCfg.reverseFactor), 0.2, 0.6)
   };
 }
 
@@ -176,28 +192,33 @@ function DrivingComponent({ managers }: { managers: { a11y: AccessibilityManager
     const steer = smooth.current.steer;
     const throttle = smooth.current.throttle;
 
-  const baseMax = 160; // px/s base max speed (lowered)
-    const maxFwd = baseMax * cfgRef.current.speedMult; // 220..2200
-    const maxRev = maxFwd * 0.4; // reverse slower
-  const accel = 900; // px/s^2
-    const turnRate = (cfgRef.current.turnDegPerSec * Math.PI) / 180; // rad/s at full steer
+    const baseMax = 160; // px/s base max speed
+    const maxFwd = baseMax * cfgRef.current.speedMult;
+    const maxRev = maxFwd * cfgRef.current.reverseFactor; // reverse slower
 
-  // Acceleration
-  const targetAcc = throttle * accel; // signed
-  // Integrate speed, then apply multiplicative drag (fraction per second)
-  speed.current += targetAcc * dt;
-  speed.current *= Math.max(0, 1 - cfgRef.current.friction * dt);
+    // Rate-limit linear speed toward target velocity (wheelchair-like)
+    const vTarget = throttle >= 0 ? throttle * maxFwd : throttle * maxRev; // signed
+    if (vTarget > speed.current) {
+      speed.current = Math.min(vTarget, speed.current + cfgRef.current.accel * dt);
+    } else {
+      speed.current = Math.max(vTarget, speed.current - cfgRef.current.decel * dt);
+    }
+    // Mild drag
+    speed.current *= Math.max(0, 1 - cfgRef.current.friction * dt);
     // deadband around 0
     if (Math.abs(speed.current) < 5) speed.current = 0;
     // Clamp speeds
     if (speed.current > maxFwd) speed.current = maxFwd;
     if (speed.current < -maxRev) speed.current = -maxRev;
 
-    // Steering. Flip when reversing for natural feel.
-    const steerDir = speed.current >= 0 ? 1 : -1;
-    // Optionally reduce steering a bit with speed to avoid oversteer (mild, always on)
-    const speedFactor = 0.6 + 0.4 / (1 + Math.abs(speed.current) / (maxFwd * 0.5));
-    heading.current += steer * steerDir * turnRate * speedFactor * dt;
+    // Turning: stronger in-place, gentler at speed
+    const speedNorm = Math.min(1, Math.abs(speed.current) / Math.max(1, maxFwd));
+    const turnAtSpeed = (cfgRef.current.turnDegPerSec * Math.PI) / 180; // rad/s
+    const turnInPlace = (cfgRef.current.turnInPlaceDegPerSec * Math.PI) / 180; // rad/s
+    const effectiveTurn = turnInPlace + (turnAtSpeed - turnInPlace) * speedNorm; // interpolate
+    const steerDir = speed.current >= 0 ? 1 : -1; // reverse flips steering
+    const omega = steer * steerDir * effectiveTurn; // rad/s
+    heading.current += omega * dt;
 
   // Integrate position
   pos.current.x += Math.cos(heading.current) * speed.current * dt;
@@ -331,6 +352,54 @@ function DrivingComponent({ managers }: { managers: { a11y: AccessibilityManager
           style={{ ['--_filled' as any]: `${((cfg.turnDegPerSec - 20) / (140 - 20)) * 100}%` }}
                   title={`${cfg.turnDegPerSec}°/s`}
                   onChange={(e) => setCfg({ ...cfg, turnDegPerSec: Number(e.currentTarget.value) })}
+                />
+              </SettingsRow>
+              <SettingsRow label="Turn-in-place rate">
+                <input
+                  type="range"
+                  min={120}
+                  max={360}
+                  step={5}
+                  value={cfg.turnInPlaceDegPerSec}
+                  style={{ ['--_filled' as any]: `${((cfg.turnInPlaceDegPerSec - 120) / (360 - 120)) * 100}%` }}
+                  title={`${cfg.turnInPlaceDegPerSec}°/s`}
+                  onChange={(e) => setCfg({ ...cfg, turnInPlaceDegPerSec: Number(e.currentTarget.value) })}
+                />
+              </SettingsRow>
+              <SettingsRow label="Acceleration">
+                <input
+                  type="range"
+                  min={200}
+                  max={1200}
+                  step={25}
+                  value={cfg.accel}
+                  style={{ ['--_filled' as any]: `${((cfg.accel - 200) / (1200 - 200)) * 100}%` }}
+                  title={`${cfg.accel} px/s²`}
+                  onChange={(e) => setCfg({ ...cfg, accel: Number(e.currentTarget.value) })}
+                />
+              </SettingsRow>
+              <SettingsRow label="Deceleration">
+                <input
+                  type="range"
+                  min={300}
+                  max={1500}
+                  step={25}
+                  value={cfg.decel}
+                  style={{ ['--_filled' as any]: `${((cfg.decel - 300) / (1500 - 300)) * 100}%` }}
+                  title={`${cfg.decel} px/s²`}
+                  onChange={(e) => setCfg({ ...cfg, decel: Number(e.currentTarget.value) })}
+                />
+              </SettingsRow>
+              <SettingsRow label="Reverse factor">
+                <input
+                  type="range"
+                  min={0.2}
+                  max={0.6}
+                  step={0.05}
+                  value={cfg.reverseFactor}
+                  style={{ ['--_filled' as any]: `${((cfg.reverseFactor - 0.2) / (0.6 - 0.2)) * 100}%` }}
+                  title={`${(cfg.reverseFactor * 100).toFixed(0)}% of forward`}
+                  onChange={(e) => setCfg({ ...cfg, reverseFactor: Number(e.currentTarget.value) })}
                 />
               </SettingsRow>
               <SettingsRow label="Friction">
