@@ -22,19 +22,20 @@ export function useDeviceInput(input: InputManager) {
       if (source === 'keyboard') {
         if (significant(v)) {
           activeRef.current = 'keyboard';
-        } else if (activeRef.current === 'keyboard') {
-          // keys released; allow switching to gamepad if active
-          if (significant(lastBySource.current.gamepad)) activeRef.current = 'gamepad';
-          else if (significant(lastBySource.current.pointer)) activeRef.current = 'pointer';
+        } else {
+          // keys released; unlock to allow next source to claim control
+          activeRef.current = 'pointer';
         }
       } else if (source === 'gamepad') {
-        // Do not override keyboard while keys held
-        if (activeRef.current !== 'keyboard' && significant(v)) {
+        // Allow override if keyboard is idle
+        const kbActive = significant(lastBySource.current.keyboard);
+        if (significant(v) && !kbActive) {
           activeRef.current = 'gamepad';
         }
       } else if (source === 'pointer') {
         // Pointer only takes over if no keyboard currently active and movement is significant
-        if (activeRef.current !== 'keyboard' && significant(v)) {
+        const kbActive = significant(lastBySource.current.keyboard);
+        if (!kbActive && significant(v)) {
           activeRef.current = 'pointer';
         }
       }

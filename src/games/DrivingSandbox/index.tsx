@@ -242,7 +242,9 @@ function DrivingComponent({ managers }: { managers: { a11y: AccessibilityManager
     if (speed.current < -maxRev) speed.current = -maxRev;
 
     // Turning: stronger in-place, gentler at speed
-    const speedNorm = Math.min(1, Math.abs(speed.current) / Math.max(1, maxFwd));
+  // Normalize by per-direction max speed so forward/reverse feel symmetric
+  const dirMax = speed.current >= 0 ? maxFwd : maxRev;
+  const speedNorm = Math.min(1, Math.abs(speed.current) / Math.max(1, dirMax));
     const turnAtSpeed = (cfgRef.current.turnDegPerSec * Math.PI) / 180; // rad/s
     const turnInPlace = (cfgRef.current.turnInPlaceDegPerSec * Math.PI) / 180; // rad/s
     const effectiveTurn = turnInPlace + (turnAtSpeed - turnInPlace) * speedNorm; // interpolate
