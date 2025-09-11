@@ -149,6 +149,8 @@ function DrivingComponent({ managers }: { managers: { a11y: AccessibilityManager
   const speed = useRef(0); // px/s
   const carRef = useRef<HTMLDivElement>(null);
   const smooth = useRef({ steer: 0, throttle: 0 });
+  const prevTargetsRef = useRef({ steer: 0, throttle: 0 });
+  const holdRef = useRef<{ steer: number; steerUntil: number; throttle: number; throttleUntil: number }>({ steer: 0, steerUntil: 0, throttle: 0, throttleUntil: 0 });
 
   // Input
   const { vector, sourceRef } = useDeviceInput(managers.input);
@@ -184,13 +186,41 @@ function DrivingComponent({ managers }: { managers: { a11y: AccessibilityManager
   // Invert Y so Up (y=-1) means forward throttle
   const targetThrottle = sourceRef.current === 'pointer' ? 0 : clamp(-vector.y, -1, 1);
 
-    // Smooth inputs to avoid jerkiness
-    const smoothingPerSec = 10; // higher = snappier
-    const a = 1 - Math.exp(-smoothingPerSec * dt);
-    smooth.current.steer += (targetSteer - smooth.current.steer) * a;
-    smooth.current.throttle += (targetThrottle - smooth.current.throttle) * a;
-    const steer = smooth.current.steer;
-    const throttle = smooth.current.throttle;
+    // Keyboard combo hold to mitigate matrix ghosting on arrow/WASD
+    const now = performance.now();
+    let kbSteer = targetSteer;
+    let kbThrottle = targetThrottle;
+    if (sourceRef.current === 'keyboard') {
+      if (Math.abs(targetSteer) < 0.001 && Math.abs(prevTargetsRef.current.steer) > 0.001) {
+        holdRef.current.steer = prevTargetsRef.current.steer;
+        holdRef.current.steerUntil = now + 90; // ms
+      }
+      if (Math.abs(targetThrottle) < 0.001 && Math.abs(prevTargetsRef.current.throttle) > 0.001) {
+        holdRef.current.throttle = prevTargetsRef.current.throttle;
+        holdRef.current.throttleUntil = now + 90;
+      }
+      if (Math.abs(kbSteer) < 0.001 && now < holdRef.current.steerUntil) kbSteer = holdRef.current.steer;
+      if (Math.abs(kbThrottle) < 0.001 && now < holdRef.current.throttleUntil) kbThrottle = holdRef.current.throttle;
+    }
+    prevTargetsRef.current.steer = targetSteer;
+    prevTargetsRef.current.throttle = targetThrottle;
+
+    // Smooth inputs to avoid jerkiness (only for gamepad). Keyboard uses instantaneous targets or held values.
+    let steer: number;
+    let throttle: number;
+    if (sourceRef.current === 'gamepad') {
+      const smoothingPerSec = 10; // higher = snappier
+      const a = 1 - Math.exp(-smoothingPerSec * dt);
+      smooth.current.steer += (targetSteer - smooth.current.steer) * a;
+      smooth.current.throttle += (targetThrottle - smooth.current.throttle) * a;
+      steer = smooth.current.steer;
+      throttle = smooth.current.throttle;
+    } else {
+      steer = kbSteer;
+      throttle = kbThrottle;
+      smooth.current.steer = steer;
+      smooth.current.throttle = throttle;
+    }
 
     const baseMax = 160; // px/s base max speed
     const maxFwd = baseMax * cfgRef.current.speedMult;
@@ -205,8 +235,8 @@ function DrivingComponent({ managers }: { managers: { a11y: AccessibilityManager
     }
     // Mild drag
     speed.current *= Math.max(0, 1 - cfgRef.current.friction * dt);
-    // deadband around 0
-    if (Math.abs(speed.current) < 5) speed.current = 0;
+  // deadband around 0 (lowered to minimize start hesitation)
+  if (Math.abs(speed.current) < 1) speed.current = 0;
     // Clamp speeds
     if (speed.current > maxFwd) speed.current = maxFwd;
     if (speed.current < -maxRev) speed.current = -maxRev;
