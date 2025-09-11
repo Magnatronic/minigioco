@@ -57,16 +57,11 @@ export class GameRegistry {
     // Fallback in browser: explicit dynamic imports if glob resolution yielded nothing
     if (found === 0) {
       try {
-        const dynMods = await Promise.all([
-          import('../games/DevDemo/index'),
-          import('../games/TargetCollection/index')
-        ]);
-        for (const dm of dynMods) {
-          if (typeof (dm as any)?.register === 'function') {
-            (dm as any).register(this);
-          } else if ((dm as any)?.default) {
-            this.register((dm as any).default as GameDefinition);
-          }
+        const dm = await import('../games/TargetCollection/index');
+        if (typeof (dm as any)?.register === 'function') {
+          (dm as any).register(this);
+        } else if ((dm as any)?.default) {
+          this.register((dm as any).default as GameDefinition);
         }
       } catch {
         // ignore if dynamic import fails

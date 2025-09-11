@@ -32,3 +32,10 @@ git push -u origin main
 3. In GitHub → Settings → Pages, set Source to "GitHub Actions" (if not already). The `deploy.yml` takes care of builds.
 
 If you fork or change the repo name, update `base` in `vite.config.ts` and the README URL.
+
+## Create a new game
+1. Copy `src/games/_template` to `src/games/YourGameName/`.
+2. Update `id`, `name`, and `description` in `index.ts`.
+3. Define your `configSchema` and adjust the settings UI in `template.component.tsx` using `SettingsGroup` and `SettingsRow`.
+4. Use `useGameLoop((dt)=>{...}, active)` for your loop and `useDeviceInput(managers.input)` for input.
+5. Run `npm run dev` and verify it appears in the game list. Add tests under `src/__tests__/` as needed.

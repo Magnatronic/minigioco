@@ -44,6 +44,20 @@
 				"$tsc"
 			],
 			"group": "build"
+		},
+		{
+			"label": "Git: Merge template into main",
+			"type": "shell",
+			"command": "git fetch --all --prune; if (git rev-parse --verify main 2>$null) { git checkout main } else { git checkout -b main origin/main }; git pull --ff-only; git merge --no-ff template",
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Git: Merge template into main (no-edit)",
+			"type": "shell",
+			"command": "git --no-pager fetch --all --prune; $hasMain = git rev-parse --verify main 2>$null; if ($LASTEXITCODE -eq 0) { git checkout main } else { $hasOriginMain = git ls-remote --heads origin main; if ($hasOriginMain) { git checkout -b main origin/main } else { git checkout -b main } }; try { git pull --ff-only } catch {} ; git merge --no-ff --no-edit template; git push -u origin main",
+			"isBackground": false,
+			"group": "build"
 		}
 	]
 }

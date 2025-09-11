@@ -63,7 +63,7 @@ export function GameShell({
   <section ref={shellRef as any} className="game-area" aria-label={`${gameDef.name} game`} tabIndex={0}>
       <header className="game-area__header" role="group">
         <div className="game-controls">
-          <button
+      <button
             className="btn"
             aria-pressed={!state.paused}
             onClick={() => {
@@ -83,6 +83,8 @@ export function GameShell({
                   );
                 }
                 setState((s) => ({ ...s, paused: false }));
+        // Move keyboard focus to the stage automatically
+        requestAnimationFrame(() => stageRef.current?.focus());
               } else {
                 gameRef.current?.pause();
                 managers.a11y.announce('Game paused');
@@ -136,6 +138,7 @@ export function GameShell({
         role="region"
         aria-label="Stage"
         ref={stageRef}
+        tabIndex={-1}
       >
         {gameDef.component ? (
           <gameDef.component managers={managers} gameRef={gameRef} />
